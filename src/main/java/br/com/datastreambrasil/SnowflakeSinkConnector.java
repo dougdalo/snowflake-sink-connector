@@ -9,7 +9,7 @@ import org.apache.kafka.connect.sink.SinkConnector;
 
 public class SnowflakeSinkConnector extends SinkConnector {
 
-    protected static final String VERSION = "1.0.0";
+    protected static final String VERSION = "1.0.1";
     protected static final String CFG_STAGE_NAME = "stage";
     protected static final String CFG_URL = "url";
     protected static final String CFG_USER = "user";

@@ -72,8 +72,14 @@ public class SnowflakeSinkTask extends SinkTask {
                 }
 
                 for (Object value : mapPayloadAfterBefore.values()) {
-                    buffer.append(value.toString()).append(",");
+                    buffer.append(String.valueOf(value)).append(",");
                 }
+
+                if (record.topic() == null || record.kafkaPartition() == null){
+                    LOGGER.error("Null values for topic or kafkaPartition. Topic {}, KafkaPartition {}", record.topic(), record.kafkaPartition());
+                    throw new RuntimeException("Null values for topic or kafkaPartition");
+                }
+
                 //topic,partition,offset,operation
                 buffer.append(String.join(",", record.topic(), String.valueOf(record.kafkaOffset()),
                         record.kafkaPartition().toString(), mapPayload.get(OP).toString()));
@@ -109,9 +115,9 @@ public class SnowflakeSinkTask extends SinkTask {
     }
 
     private void validateFieldOnMap(String fieldToValidate, Map<String,?> map){
-        if (!map.containsKey(fieldToValidate)) {
-            LOGGER.error("Key [{}] is missing on json", fieldToValidate);
-            throw new RuntimeException("missing key ["+fieldToValidate+"] on json");
+        if (!map.containsKey(fieldToValidate) || map.get(fieldToValidate) == null) {
+            LOGGER.error("Key [{}] is missing or null on json", fieldToValidate);
+            throw new RuntimeException("missing or null key ["+fieldToValidate+"] on json");
         }
     }
 
