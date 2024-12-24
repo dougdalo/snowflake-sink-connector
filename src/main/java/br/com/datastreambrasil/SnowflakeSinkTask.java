@@ -173,7 +173,13 @@ public class SnowflakeSinkTask extends SinkTask {
         for (var recordInBuffer : buffer) {
             for (int i = 0; i < columnsFromTable.size(); i++) {
                 if (recordInBuffer.containsKey(columnsFromTable.get(i))) {
-                    csvInMemory.append(String.valueOf(recordInBuffer.get(columnsFromTable.get(i))));
+                    var valueFromRecord = recordInBuffer.get(columnsFromTable.get(i));
+                    if (valueFromRecord == null) {
+                        csvInMemory.append("");
+                    }else{
+                        csvInMemory.append(String.valueOf(valueFromRecord));
+                    }
+
                 }else{
                     LOGGER.warn("Column {} not found on buffer, trying to insert empty value", columnsFromTable.get(i));
                     csvInMemory.append(""); //empty record to be inserted
