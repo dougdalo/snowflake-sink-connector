@@ -2,11 +2,15 @@ package br.com.datastreambrasil;
 
 import java.io.ByteArrayInputStream;
 import java.io.StringWriter;
+import java.sql.Array;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.UUID;
 import net.snowflake.client.jdbc.SnowflakeConnection;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -21,11 +25,17 @@ public class SnowflakeSinkTask extends SinkTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnowflakeSinkConnector.class);
     private Connection connection;
     private String stageName;
-    private final StringWriter buffer = new StringWriter();
+    private String tableName;
+    private String schemaName;
+    private final Collection<Map<String, Object>> buffer = new ArrayList<>();
     private static final String PAYLOAD = "payload";
     private static final String AFTER = "after";
     private static final String BEFORE = "before";
     private static final String OP = "op";
+    private static final String IHTOPIC = "ih_topic";
+    private static final String IHOFFSET = "ih_offset";
+    private static final String IHPARTITION = "ih_partition";
+    private static final String IHOP = "ih_op";
     private static final String DELETE = "d";
 
     @Override
@@ -38,6 +48,8 @@ public class SnowflakeSinkTask extends SinkTask {
         try {
             //init configs
             stageName = map.get(SnowflakeSinkConnector.CFG_STAGE_NAME);
+            tableName = map.get(SnowflakeSinkConnector.CFG_TABLE_NAME);
+            schemaName = map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
 
             //init connection
             var properties = new Properties();
@@ -62,30 +74,33 @@ public class SnowflakeSinkTask extends SinkTask {
 
                 validateFieldOnMap(OP, mapPayload);
                 var op = mapPayload.get(OP);
-                Map<String,Object> mapPayloadAfterBefore;
+                Map<String, Object> mapPayloadAfterBefore;
                 if (op.equals(DELETE)) {
                     validateFieldOnMap(BEFORE, mapPayload);
                     mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(BEFORE);
-                }else{
+                } else {
                     validateFieldOnMap(AFTER, mapPayload);
                     mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(AFTER);
                 }
 
-                for (Object value : mapPayloadAfterBefore.values()) {
-                    buffer.append(String.valueOf(value)).append(",");
-                }
-
-                if (record.topic() == null || record.kafkaPartition() == null){
+                if (record.topic() == null || record.kafkaPartition() == null) {
                     LOGGER.error("Null values for topic or kafkaPartition. Topic {}, KafkaPartition {}", record.topic(), record.kafkaPartition());
                     throw new RuntimeException("Null values for topic or kafkaPartition");
                 }
 
                 //topic,partition,offset,operation
-                buffer.append(String.join(",", record.topic(), String.valueOf(record.kafkaOffset()),
-                        record.kafkaPartition().toString(), mapPayload.get(OP).toString()));
-                buffer.append("\n");
+                mapPayloadAfterBefore.put(IHTOPIC, record.topic());
+                mapPayloadAfterBefore.put(IHPARTITION, record.kafkaPartition());
+                mapPayloadAfterBefore.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
+                mapPayloadAfterBefore.put(IHOP, String.valueOf(mapPayload.get(OP)));
+
+
+                var insensitiveMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+                insensitiveMap.putAll(mapPayloadAfterBefore);
+                buffer.add(insensitiveMap);
+
             }
-        }catch (Throwable e){
+        } catch (Throwable e) {
             LOGGER.error("Error while putting records", e);
             throw new RuntimeException("Error while putting records", e);
         }
@@ -93,19 +108,37 @@ public class SnowflakeSinkTask extends SinkTask {
 
     @Override
     public void flush(Map<TopicPartition, OffsetAndMetadata> currentOffsets) {
+        var destFileName = UUID.randomUUID().toString();
         try {
-            if (buffer.toString().isEmpty()) {
+            if (buffer.isEmpty()) {
                 return;
             }
 
-            var destFileName = UUID.randomUUID().toString();
-            var inputStream = new ByteArrayInputStream(buffer.toString().getBytes());
-            connection.unwrap(SnowflakeConnection.class).uploadStream(stageName, "/", inputStream,
+            LOGGER.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName, tableName);
+
+            var csvToInsert = prepareOrderedColumnsBasedOnTargetTable();
+            var inputStream = new ByteArrayInputStream(csvToInsert.getBytes());
+            var connectionSnowflake = connection.unwrap(SnowflakeConnection.class);
+            connectionSnowflake.uploadStream(stageName, "/", inputStream,
                     destFileName, true);
-            buffer.getBuffer().setLength(0);
+            var stmt = connection.createStatement();
+            String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
+            LOGGER.debug("Copying statement: {}", copyInto);
+            stmt.executeUpdate(copyInto);
+
         } catch (Throwable e) {
+            try {
+                var stmt = connection.createStatement();
+                String removeFileFromStage = String.format("REMOVE @%s/%s.gz", stageName, destFileName);
+                stmt.execute(removeFileFromStage);
+            }catch (Throwable e2){
+                throw new RuntimeException("Error while removing file ["+destFileName+"] from stage " + stageName, e2);
+            }
+
             LOGGER.error("Error while flushing Snowflake connector", e);
             throw new RuntimeException("Error while flushing", e);
+        } finally {
+            buffer.clear();
         }
     }
 
@@ -114,11 +147,46 @@ public class SnowflakeSinkTask extends SinkTask {
     public void stop() {
     }
 
-    private void validateFieldOnMap(String fieldToValidate, Map<String,?> map){
+    private void validateFieldOnMap(String fieldToValidate, Map<String, ?> map) {
         if (!map.containsKey(fieldToValidate) || map.get(fieldToValidate) == null) {
             LOGGER.error("Key [{}] is missing or null on json", fieldToValidate);
-            throw new RuntimeException("missing or null key ["+fieldToValidate+"] on json");
+            throw new RuntimeException("missing or null key [" + fieldToValidate + "] on json");
         }
     }
 
+    private String prepareOrderedColumnsBasedOnTargetTable() throws Throwable {
+        var metadata = connection.getMetaData();
+
+        var columnsFromTable = new ArrayList<String>();
+        try (var rsColumns = metadata.getColumns(null, schemaName.toUpperCase(), tableName.toUpperCase(), null)) {
+            while (rsColumns.next()) {
+                columnsFromTable.add(rsColumns.getString("COLUMN_NAME").toUpperCase());
+            }
+        }
+        if (columnsFromTable.isEmpty()){
+            throw new RuntimeException("Empty columns returned from target table "+tableName+", schema "+ schemaName);
+        }
+
+        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
+
+        var csvInMemory = new StringWriter();
+        for (var recordInBuffer : buffer) {
+            for (int i = 0; i < columnsFromTable.size(); i++) {
+                if (recordInBuffer.containsKey(columnsFromTable.get(i))) {
+                    csvInMemory.append(String.valueOf(recordInBuffer.get(columnsFromTable.get(i))));
+                }else{
+                    LOGGER.warn("Column {} not found on buffer, trying to insert empty value", columnsFromTable.get(i));
+                    csvInMemory.append(""); //empty record to be inserted
+                }
+
+                if (i < columnsFromTable.size() - 1) {
+                    csvInMemory.append(",");
+                }
+            }
+
+            csvInMemory.append("\n");
+        }
+
+        return csvInMemory.toString();
+    }
 }

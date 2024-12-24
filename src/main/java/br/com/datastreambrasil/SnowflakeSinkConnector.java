@@ -9,8 +9,10 @@ import org.apache.kafka.connect.sink.SinkConnector;
 
 public class SnowflakeSinkConnector extends SinkConnector {
 
-    protected static final String VERSION = "1.0.1";
+    protected static final String VERSION = "1.0.2";
     protected static final String CFG_STAGE_NAME = "stage";
+    protected static final String CFG_TABLE_NAME = "table";
+    protected static final String CFG_SCHEMA_NAME = "schema";
     protected static final String CFG_URL = "url";
     protected static final String CFG_USER = "user";
     protected static final String CFG_PASSWORD = "password";
@@ -22,7 +24,11 @@ public class SnowflakeSinkConnector extends SinkConnector {
             .define(CFG_USER, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
                     "User to snowflake connection")
             .define(CFG_PASSWORD, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
-                    "Password to snowflake connection");
+                    "Password to snowflake connection")
+            .define(CFG_TABLE_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
+                    "Target table to copy data into")
+            .define(CFG_SCHEMA_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
+                    "Target schema to copy data into");
 
     private Map<String, String> props;
 
