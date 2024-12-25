@@ -2,10 +2,8 @@ package br.com.datastreambrasil;
 
 import java.io.ByteArrayInputStream;
 import java.io.StringWriter;
-import java.sql.Array;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
@@ -177,7 +175,7 @@ public class SnowflakeSinkTask extends SinkTask {
                     if (valueFromRecord == null) {
                         csvInMemory.append("");
                     }else{
-                        csvInMemory.append(String.valueOf(valueFromRecord));
+                        csvInMemory.append("\"").append(String.valueOf(valueFromRecord)).append("\"");
                     }
 
                 }else{
