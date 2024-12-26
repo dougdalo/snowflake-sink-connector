@@ -1,7 +1,6 @@
 package br.com.datastreambrasil;
 
 import java.io.ByteArrayInputStream;
-import java.io.StringWriter;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.ArrayList;
@@ -22,6 +21,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SnowflakeSinkConnector.class);
     private Connection connection;
+    private SnowflakeConnection snowflakeConnection;
     private String stageName;
     private String tableName;
     private String schemaName;
@@ -54,6 +54,7 @@ public class SnowflakeSinkTask extends SinkTask {
             properties.put("user", map.get(SnowflakeSinkConnector.CFG_USER));
             properties.put("password", map.get(SnowflakeSinkConnector.CFG_PASSWORD));
             connection = DriverManager.getConnection(map.get(SnowflakeSinkConnector.CFG_URL), properties);
+            snowflakeConnection = connection.unwrap(SnowflakeConnection.class);
         } catch (Throwable e) {
             LOGGER.error("Error while starting Snowflake connector", e);
             throw new RuntimeException("Error while starting Snowflake connector", e);
@@ -106,18 +107,18 @@ public class SnowflakeSinkTask extends SinkTask {
 
     @Override
     public void flush(Map<TopicPartition, OffsetAndMetadata> currentOffsets) {
+
+        if (buffer.isEmpty()) {
+            return;
+        }
+
         var destFileName = UUID.randomUUID().toString();
         try {
-            if (buffer.isEmpty()) {
-                return;
-            }
-
             LOGGER.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName, tableName);
 
             var csvToInsert = prepareOrderedColumnsBasedOnTargetTable();
             try (var inputStream = new ByteArrayInputStream(csvToInsert.getBytes())){
-                var connectionSnowflake = connection.unwrap(SnowflakeConnection.class);
-                connectionSnowflake.uploadStream(stageName, "/", inputStream,
+                snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
                     String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
@@ -171,20 +172,17 @@ public class SnowflakeSinkTask extends SinkTask {
 
         LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
 
-        var csvInMemory = new StringWriter();
+        var csvInMemory = new StringBuilder();
         for (var recordInBuffer : buffer) {
             for (int i = 0; i < columnsFromTable.size(); i++) {
                 if (recordInBuffer.containsKey(columnsFromTable.get(i))) {
                     var valueFromRecord = recordInBuffer.get(columnsFromTable.get(i));
-                    if (valueFromRecord == null) {
-                        csvInMemory.append("");
-                    }else{
-                        csvInMemory.append("\"").append(String.valueOf(valueFromRecord)).append("\"");
+                    if (valueFromRecord != null) {
+                        csvInMemory.append("\"").append(valueFromRecord).append("\"");
                     }
 
                 }else{
-                    LOGGER.warn("Column {} not found on buffer, trying to insert empty value", columnsFromTable.get(i));
-                    csvInMemory.append(""); //empty record to be inserted
+                    LOGGER.warn("Column {} not found on buffer, inserted empty value", columnsFromTable.get(i));
                 }
 
                 if (i < columnsFromTable.size() - 1) {
