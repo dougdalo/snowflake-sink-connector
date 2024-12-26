@@ -97,10 +97,7 @@ public class SnowflakeSinkTask extends SinkTask {
                 mapPayloadAfterBefore.put(IHOP, String.valueOf(mapPayload.get(OP)));
 
 
-                var insensitiveMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-                insensitiveMap.putAll(mapPayloadAfterBefore);
-                buffer.add(insensitiveMap);
-
+                buffer.add(mapPayloadAfterBefore);
             }
         } catch (Throwable e) {
             LOGGER.error("Error while putting records", e);
@@ -177,15 +174,21 @@ public class SnowflakeSinkTask extends SinkTask {
         LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
 
         var csvInMemory = new ByteArrayOutputStream();
+
         for (var recordInBuffer : buffer) {
             for (int i = 0; i < columnsFromTable.size(); i++) {
-                if (recordInBuffer.containsKey(columnsFromTable.get(i))) {
-                    var valueFromRecord = recordInBuffer.get(columnsFromTable.get(i));
+                if (recordInBuffer.containsKey(columnsFromTable.get(i).toUpperCase())) {
+                    var valueFromRecord = recordInBuffer.get(columnsFromTable.get(i).toUpperCase());
                     if (valueFromRecord != null) {
                         var strBuffer = "\"" + valueFromRecord + "\"";
                         csvInMemory.writeBytes(strBuffer.getBytes());
                     }
-
+                }else if (recordInBuffer.containsKey(columnsFromTable.get(i).toLowerCase())) {
+                    var valueFromRecord = recordInBuffer.get(columnsFromTable.get(i).toLowerCase());
+                    if (valueFromRecord != null) {
+                        var strBuffer = "\"" + valueFromRecord + "\"";
+                        csvInMemory.writeBytes(strBuffer.getBytes());
+                    }
                 }else{
                     LOGGER.warn("Column {} not found on buffer, inserted empty value", columnsFromTable.get(i));
                 }
