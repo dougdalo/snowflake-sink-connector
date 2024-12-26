@@ -1,6 +1,9 @@
 package br.com.datastreambrasil;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+import java.io.StringReader;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.ArrayList;
@@ -116,8 +119,9 @@ public class SnowflakeSinkTask extends SinkTask {
         try {
             LOGGER.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName, tableName);
 
-            var csvToInsert = prepareOrderedColumnsBasedOnTargetTable();
-            try (var inputStream = new ByteArrayInputStream(csvToInsert.getBytes())){
+
+            try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable();
+                 var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())){
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
@@ -157,7 +161,7 @@ public class SnowflakeSinkTask extends SinkTask {
         }
     }
 
-    private String prepareOrderedColumnsBasedOnTargetTable() throws Throwable {
+    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable() throws Throwable {
         var metadata = connection.getMetaData();
 
         var columnsFromTable = new ArrayList<String>();
@@ -172,13 +176,14 @@ public class SnowflakeSinkTask extends SinkTask {
 
         LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
 
-        var csvInMemory = new StringBuilder();
+        var csvInMemory = new ByteArrayOutputStream();
         for (var recordInBuffer : buffer) {
             for (int i = 0; i < columnsFromTable.size(); i++) {
                 if (recordInBuffer.containsKey(columnsFromTable.get(i))) {
                     var valueFromRecord = recordInBuffer.get(columnsFromTable.get(i));
                     if (valueFromRecord != null) {
-                        csvInMemory.append("\"").append(valueFromRecord).append("\"");
+                        var strBuffer = "\"" + valueFromRecord + "\"";
+                        csvInMemory.writeBytes(strBuffer.getBytes());
                     }
 
                 }else{
@@ -186,13 +191,13 @@ public class SnowflakeSinkTask extends SinkTask {
                 }
 
                 if (i < columnsFromTable.size() - 1) {
-                    csvInMemory.append(",");
+                    csvInMemory.writeBytes(",".getBytes());
                 }
             }
 
-            csvInMemory.append("\n");
+            csvInMemory.writeBytes("\n".getBytes());
         }
 
-        return csvInMemory.toString();
+        return csvInMemory;
     }
 }
