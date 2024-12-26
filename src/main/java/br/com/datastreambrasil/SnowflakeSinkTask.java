@@ -119,18 +119,20 @@ public class SnowflakeSinkTask extends SinkTask {
                 var connectionSnowflake = connection.unwrap(SnowflakeConnection.class);
                 connectionSnowflake.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
-                var stmt = connection.createStatement();
-                String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
-                LOGGER.debug("Copying statement: {}", copyInto);
-                stmt.executeUpdate(copyInto);
+                try (var stmt = connection.createStatement()) {
+                    String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
+                    LOGGER.debug("Copying statement: {}", copyInto);
+                    stmt.executeUpdate(copyInto);
+                }
             }
 
 
         } catch (Throwable e) {
             try {
-                var stmt = connection.createStatement();
-                String removeFileFromStage = String.format("REMOVE @%s/%s.gz", stageName, destFileName);
-                stmt.execute(removeFileFromStage);
+                try (var stmt = connection.createStatement()){
+                    String removeFileFromStage = String.format("REMOVE @%s/%s.gz", stageName, destFileName);
+                    stmt.execute(removeFileFromStage);
+                }
             }catch (Throwable e2){
                 throw new RuntimeException("Error while removing file ["+destFileName+"] from stage " + stageName, e2);
             }
