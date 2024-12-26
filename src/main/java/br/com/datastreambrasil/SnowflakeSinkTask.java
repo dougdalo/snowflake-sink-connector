@@ -115,14 +115,16 @@ public class SnowflakeSinkTask extends SinkTask {
             LOGGER.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName, tableName);
 
             var csvToInsert = prepareOrderedColumnsBasedOnTargetTable();
-            var inputStream = new ByteArrayInputStream(csvToInsert.getBytes());
-            var connectionSnowflake = connection.unwrap(SnowflakeConnection.class);
-            connectionSnowflake.uploadStream(stageName, "/", inputStream,
-                    destFileName, true);
-            var stmt = connection.createStatement();
-            String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
-            LOGGER.debug("Copying statement: {}", copyInto);
-            stmt.executeUpdate(copyInto);
+            try (var inputStream = new ByteArrayInputStream(csvToInsert.getBytes())){
+                var connectionSnowflake = connection.unwrap(SnowflakeConnection.class);
+                connectionSnowflake.uploadStream(stageName, "/", inputStream,
+                        destFileName, true);
+                var stmt = connection.createStatement();
+                String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
+                LOGGER.debug("Copying statement: {}", copyInto);
+                stmt.executeUpdate(copyInto);
+            }
+
 
         } catch (Throwable e) {
             try {
