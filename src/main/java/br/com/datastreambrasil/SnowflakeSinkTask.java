@@ -2,12 +2,11 @@ package br.com.datastreambrasil;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
-import java.io.StringReader;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeMap;
@@ -20,6 +19,8 @@ import org.apache.kafka.connect.sink.SinkTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
+@SuppressWarnings("unchecked")
 public class SnowflakeSinkTask extends SinkTask {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SnowflakeSinkConnector.class);
@@ -28,7 +29,11 @@ public class SnowflakeSinkTask extends SinkTask {
     private String stageName;
     private String tableName;
     private String schemaName;
+    private String strategy;
+    private String[] pks;
+    private String[] timestampFieldsConvertToSeconds;
     private final Collection<Map<String, Object>> buffer = new ArrayList<>();
+    private final List<String> columnsFromSnowflake = new ArrayList<>();
     private static final String PAYLOAD = "payload";
     private static final String AFTER = "after";
     private static final String BEFORE = "before";
@@ -51,6 +56,13 @@ public class SnowflakeSinkTask extends SinkTask {
             stageName = map.get(SnowflakeSinkConnector.CFG_STAGE_NAME);
             tableName = map.get(SnowflakeSinkConnector.CFG_TABLE_NAME);
             schemaName = map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
+            strategy = map.get(SnowflakeSinkConnector.CFG_STRATEGY);
+            pks = map.get(SnowflakeSinkConnector.CFG_PK_LIST).split(",");
+            timestampFieldsConvertToSeconds = map.get(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS).split(",");
+
+            if (strategy.equalsIgnoreCase(SnowflakeSinkConnector.STRATEGY_MERGE) && pks.length == 0){
+                throw new RuntimeException(String.format("field %s required when strategy is %s", SnowflakeSinkConnector.CFG_PK_LIST, SnowflakeSinkConnector.STRATEGY_MERGE));
+            }
 
             //init connection
             var properties = new Properties();
@@ -64,7 +76,7 @@ public class SnowflakeSinkTask extends SinkTask {
         }
     }
 
-    @SuppressWarnings("unchecked")
+
     @Override
     public void put(Collection<SinkRecord> collection) {
         try {
@@ -96,8 +108,10 @@ public class SnowflakeSinkTask extends SinkTask {
                 mapPayloadAfterBefore.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
                 mapPayloadAfterBefore.put(IHOP, String.valueOf(mapPayload.get(OP)));
 
+                var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+                mapCaseInsensitive.putAll(mapPayloadAfterBefore);
 
-                buffer.add(mapPayloadAfterBefore);
+                buffer.add(mapCaseInsensitive);
             }
         } catch (Throwable e) {
             LOGGER.error("Error while putting records", e);
@@ -122,28 +136,107 @@ public class SnowflakeSinkTask extends SinkTask {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
-                    String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
-                    LOGGER.debug("Copying statement: {}", copyInto);
-                    stmt.executeUpdate(copyInto);
+                    String command;
+                    if (SnowflakeSinkConnector.STRATEGY_COPY.equalsIgnoreCase(strategy)){
+                        command = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
+                    }else if (SnowflakeSinkConnector.STRATEGY_MERGE.equalsIgnoreCase(strategy)){
+                        command = String.format("""
+                                MERGE INTO %s target USING (select %s from @%s/%s.gz) source ON %s
+                                WHEN MATCHED AND source.ih_op = 'd' THEN DELETE
+                                WHEN MATCHED AND source.ih_op <> 'd' THEN
+                                  %s
+                                WHEN NOT MATCHED THEN
+                                  %s;""", tableName, generateSelectFieldsInStageToMerge(), stageName,
+                                destFileName,
+                                generateJoinClauseToMerge(),
+                                generateUpdateSetClauseToMerge(),generateInsertClauseToMerge());
+                    }else{
+                        throw new RuntimeException("Invalid strategy defined in config");
+                    }
+
+
+                    LOGGER.debug("statement: {}", command);
+                    stmt.executeUpdate(command);
                 }
             }
 
 
         } catch (Throwable e) {
+            LOGGER.error("Error while flushing Snowflake connector", e);
+            throw new RuntimeException("Error while flushing", e);
+        } finally {
+            buffer.clear();
+
             try {
                 try (var stmt = connection.createStatement()){
                     String removeFileFromStage = String.format("REMOVE @%s/%s.gz", stageName, destFileName);
                     stmt.execute(removeFileFromStage);
                 }
             }catch (Throwable e2){
-                throw new RuntimeException("Error while removing file ["+destFileName+"] from stage " + stageName, e2);
+                LOGGER.error("Error while removing file [{}] from stage {}", destFileName, stageName, e2);
             }
-
-            LOGGER.error("Error while flushing Snowflake connector", e);
-            throw new RuntimeException("Error while flushing", e);
-        } finally {
-            buffer.clear();
         }
+    }
+
+    private String generateInsertClauseToMerge() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("INSERT (");
+        for (int i = 0; i < columnsFromSnowflake.size(); i++){
+            sb.append(String.format("%s", columnsFromSnowflake.get(i)));
+
+            if (i+1 < columnsFromSnowflake.size()) {
+                sb.append(", ");
+            }
+        }
+
+        sb.append(") VALUES (");
+        for (int i = 0; i < columnsFromSnowflake.size(); i++){
+            sb.append(String.format("source.%s", columnsFromSnowflake.get(i)));
+
+            if (i+1 < columnsFromSnowflake.size()) {
+                sb.append(", ");
+            }
+        }
+        sb.append(")");
+
+        return sb.toString();
+    }
+
+    private String generateUpdateSetClauseToMerge() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("UPDATE SET ");
+        for (int i = 0; i < columnsFromSnowflake.size(); i++){
+            sb.append(String.format("target.%s = source.%s", columnsFromSnowflake.get(i),columnsFromSnowflake.get(i)));
+
+            if (i+1 < columnsFromSnowflake.size()) {
+                sb.append(", ");
+            }
+        }
+
+        return sb.toString();
+    }
+
+    private String generateSelectFieldsInStageToMerge() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < columnsFromSnowflake.size(); i++){
+            sb.append(String.format(" $%d %s,", i+1, columnsFromSnowflake.get(i)));
+        }
+
+        sb.append(String.format("$%d %s", columnsFromSnowflake.size()+1, IHOP));
+        return sb.toString();
+    }
+
+    private String generateJoinClauseToMerge() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < pks.length; i++){
+            sb.append(String.format(" target.%s = source.%s", pks[i],pks[i]));
+
+            if (i+1 < pks.length){
+                sb.append(", ");
+            }
+        }
+
+        return sb.toString();
     }
 
 
@@ -157,6 +250,7 @@ public class SnowflakeSinkTask extends SinkTask {
             throw new RuntimeException("missing or null key [" + fieldToValidate + "] on json");
         }
     }
+
 
     private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable() throws Throwable {
         var metadata = connection.getMetaData();
@@ -172,35 +266,46 @@ public class SnowflakeSinkTask extends SinkTask {
         }
 
         LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
+        columnsFromSnowflake.clear();
+        columnsFromSnowflake.addAll(columnsFromTable);
 
         var csvInMemory = new ByteArrayOutputStream();
 
         for (var recordInBuffer : buffer) {
-            for (int i = 0; i < columnsFromTable.size(); i++) {
-                if (recordInBuffer.containsKey(columnsFromTable.get(i).toUpperCase())) {
-                    var valueFromRecord = recordInBuffer.get(columnsFromTable.get(i).toUpperCase());
+            for (String columnFromSnowflakeTable : columnsFromTable) {
+                if (recordInBuffer.containsKey(columnFromSnowflakeTable)) {
+                    var valueFromRecord = recordInBuffer.get(columnFromSnowflakeTable);
+                    if (containsAny(columnFromSnowflakeTable, timestampFieldsConvertToSeconds)) {
+                        var valueFromRecordAsLong = (long) valueFromRecord;
+                        valueFromRecord = valueFromRecordAsLong / 1000;
+                    }
+
                     if (valueFromRecord != null) {
                         var strBuffer = "\"" + valueFromRecord + "\"";
                         csvInMemory.writeBytes(strBuffer.getBytes());
                     }
-                }else if (recordInBuffer.containsKey(columnsFromTable.get(i).toLowerCase())) {
-                    var valueFromRecord = recordInBuffer.get(columnsFromTable.get(i).toLowerCase());
-                    if (valueFromRecord != null) {
-                        var strBuffer = "\"" + valueFromRecord + "\"";
-                        csvInMemory.writeBytes(strBuffer.getBytes());
-                    }
-                }else{
-                    LOGGER.warn("Column {} not found on buffer, inserted empty value", columnsFromTable.get(i));
+                } else {
+                    LOGGER.warn("Column {} not found on buffer, inserted empty value", columnFromSnowflakeTable);
                 }
 
-                if (i < columnsFromTable.size() - 1) {
-                    csvInMemory.writeBytes(",".getBytes());
-                }
+                csvInMemory.writeBytes(",".getBytes());
             }
 
+            csvInMemory.writeBytes(recordInBuffer.get(IHOP).toString().getBytes());
             csvInMemory.writeBytes("\n".getBytes());
         }
 
         return csvInMemory;
+    }
+
+
+    private boolean containsAny(String checkValue, String[] values){
+        for (String s : values){
+            if (s.trim().equalsIgnoreCase(checkValue.trim())){
+                return true;
+            }
+        }
+
+        return false;
     }
 }
