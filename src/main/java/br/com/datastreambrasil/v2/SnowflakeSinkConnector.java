@@ -1,4 +1,4 @@
-package br.com.datastreambrasil;
+package br.com.datastreambrasil.v2;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,13 +14,10 @@ public class SnowflakeSinkConnector extends SinkConnector {
     protected static final String CFG_TABLE_NAME = "table";
     protected static final String CFG_PK_LIST = "primary_keys";
     protected static final String CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS = "timestamp_fields_convert_seconds";
-    protected static final String CFG_STRATEGY = "strategy";
     protected static final String CFG_SCHEMA_NAME = "schema";
     protected static final String CFG_URL = "url";
     protected static final String CFG_USER = "user";
     protected static final String CFG_PASSWORD = "password";
-    protected static final String STRATEGY_COPY = "copy";
-    protected static final String STRATEGY_MERGE = "merge";
 
     static final ConfigDef CONFIG_DEF = new ConfigDef()
             .define(CFG_STAGE_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
@@ -33,8 +30,6 @@ public class SnowflakeSinkConnector extends SinkConnector {
                     "Password to snowflake connection")
             .define(CFG_TABLE_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
                     "Target table to copy data into")
-            .define(CFG_STRATEGY, ConfigDef.Type.STRING,  "copy", ConfigDef.ValidString.in(STRATEGY_COPY, STRATEGY_MERGE), ConfigDef.Importance.HIGH,
-                    "Strategy to execute after data is ingested on stage area, should be copy or merge")
             .define(CFG_PK_LIST, ConfigDef.Type.LIST, null, ConfigDef.Importance.HIGH,
                     "List of Primary Keys for this snowflake table")
             .define(CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,

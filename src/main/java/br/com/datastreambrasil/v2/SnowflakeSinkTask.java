@@ -1,10 +1,11 @@
-package br.com.datastreambrasil;
+package br.com.datastreambrasil.v2;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -29,9 +30,8 @@ public class SnowflakeSinkTask extends SinkTask {
     private String stageName;
     private String tableName;
     private String schemaName;
-    private String strategy;
-    private String[] pks;
-    private String[] timestampFieldsConvertToSeconds;
+    private final List<String> pks = new ArrayList<>();
+    private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final Collection<Map<String, Object>> buffer = new ArrayList<>();
     private final List<String> columnsFromSnowflake = new ArrayList<>();
     private static final String PAYLOAD = "payload";
@@ -56,12 +56,13 @@ public class SnowflakeSinkTask extends SinkTask {
             stageName = map.get(SnowflakeSinkConnector.CFG_STAGE_NAME);
             tableName = map.get(SnowflakeSinkConnector.CFG_TABLE_NAME);
             schemaName = map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
-            strategy = map.get(SnowflakeSinkConnector.CFG_STRATEGY);
-            pks = map.get(SnowflakeSinkConnector.CFG_PK_LIST).split(",");
-            timestampFieldsConvertToSeconds = map.get(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS).split(",");
 
-            if (strategy.equalsIgnoreCase(SnowflakeSinkConnector.STRATEGY_MERGE) && pks.length == 0){
-                throw new RuntimeException(String.format("field %s required when strategy is %s", SnowflakeSinkConnector.CFG_PK_LIST, SnowflakeSinkConnector.STRATEGY_MERGE));
+            if (map.containsKey(SnowflakeSinkConnector.CFG_PK_LIST)) {
+                pks.addAll(Arrays.stream(map.get(SnowflakeSinkConnector.CFG_PK_LIST).split(",")).toList());
+            }
+
+            if (map.containsKey(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS)) {
+                timestampFieldsConvertToSeconds.addAll(Arrays.stream(map.get(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS).split(",")).toList());
             }
 
             //init connection
@@ -136,11 +137,7 @@ public class SnowflakeSinkTask extends SinkTask {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
-                    String command;
-                    if (SnowflakeSinkConnector.STRATEGY_COPY.equalsIgnoreCase(strategy)){
-                        command = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
-                    }else if (SnowflakeSinkConnector.STRATEGY_MERGE.equalsIgnoreCase(strategy)){
-                        command = String.format("""
+                    String command = String.format("""
                                 MERGE INTO %s target USING (select %s from @%s/%s.gz) source ON %s
                                 WHEN MATCHED AND source.ih_op = 'd' THEN DELETE
                                 WHEN MATCHED AND source.ih_op <> 'd' THEN
@@ -150,10 +147,6 @@ public class SnowflakeSinkTask extends SinkTask {
                                 destFileName,
                                 generateJoinClauseToMerge(),
                                 generateUpdateSetClauseToMerge(),generateInsertClauseToMerge());
-                    }else{
-                        throw new RuntimeException("Invalid strategy defined in config");
-                    }
-
 
                     LOGGER.debug("statement: {}", command);
                     stmt.executeUpdate(command);
@@ -228,10 +221,10 @@ public class SnowflakeSinkTask extends SinkTask {
 
     private String generateJoinClauseToMerge() {
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < pks.length; i++){
-            sb.append(String.format(" target.%s = source.%s", pks[i],pks[i]));
+        for (int i = 0; i < pks.size(); i++){
+            sb.append(String.format(" target.%s = source.%s", pks.get(i),pks.get(i)));
 
-            if (i+1 < pks.length){
+            if (i+1 < pks.size()){
                 sb.append(", ");
             }
         }
@@ -291,7 +284,8 @@ public class SnowflakeSinkTask extends SinkTask {
                 csvInMemory.writeBytes(",".getBytes());
             }
 
-            csvInMemory.writeBytes(recordInBuffer.get(IHOP).toString().getBytes());
+            var strBuffer = "\"" +recordInBuffer.get(IHOP).toString() + "\"";
+            csvInMemory.writeBytes(strBuffer.getBytes());
             csvInMemory.writeBytes("\n".getBytes());
         }
 
@@ -299,7 +293,7 @@ public class SnowflakeSinkTask extends SinkTask {
     }
 
 
-    private boolean containsAny(String checkValue, String[] values){
+    private boolean containsAny(String checkValue, List<String> values){
         for (String s : values){
             if (s.trim().equalsIgnoreCase(checkValue.trim())){
                 return true;

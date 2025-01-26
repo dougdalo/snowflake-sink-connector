@@ -1,4 +1,4 @@
-package br.com.datastreambrasil;
+package br.com.datastreambrasil.v2;
 
 public final class FieldType {
     private String field;
