@@ -137,19 +137,23 @@ public class SnowflakeSinkTask extends SinkTask {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
-                    String command = String.format("""
-                                MERGE INTO %s target USING (select %s from @%s/%s.gz) source ON %s
+                    String command1 = String.format("""
+                            CREATE OR REPLACE TEMPORARY TABLE "%s" AS
+                            SELECT %s FROM @%s/%s.gz;""",destFileName,generateSelectFieldsInStageToMerge(), stageName,destFileName);
+                    String command2 = String.format("""
+                                MERGE INTO %s target USING (select * from "%s") source ON %s
                                 WHEN MATCHED AND source.ih_op = 'd' THEN DELETE
                                 WHEN MATCHED AND source.ih_op <> 'd' THEN
                                   %s
                                 WHEN NOT MATCHED THEN
-                                  %s;""", tableName, generateSelectFieldsInStageToMerge(), stageName,
-                                destFileName,
+                                  %s;""", tableName, destFileName,
                                 generateJoinClauseToMerge(),
                                 generateUpdateSetClauseToMerge(),generateInsertClauseToMerge());
 
-                    LOGGER.debug("statement: {}", command);
-                    stmt.executeUpdate(command);
+                    LOGGER.debug("statement 1: {}", command1);
+                    LOGGER.debug("statement 2: {}", command2);
+                    stmt.executeUpdate(command1);
+                    stmt.executeUpdate(command2);
                 }
             }
 
@@ -169,6 +173,16 @@ public class SnowflakeSinkTask extends SinkTask {
                 LOGGER.error("Error while removing file [{}] from stage {}", destFileName, stageName, e2);
             }
         }
+    }
+
+    private String generateSelectFieldsInStageToMerge() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < columnsFromSnowflake.size(); i++){
+            sb.append(String.format(" $%d %s,", i+1, columnsFromSnowflake.get(i)));
+        }
+
+        sb.append(String.format("$%d %s", columnsFromSnowflake.size()+1, IHOP));
+        return sb.toString();
     }
 
     private String generateInsertClauseToMerge() {
@@ -206,16 +220,6 @@ public class SnowflakeSinkTask extends SinkTask {
             }
         }
 
-        return sb.toString();
-    }
-
-    private String generateSelectFieldsInStageToMerge() {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < columnsFromSnowflake.size(); i++){
-            sb.append(String.format(" $%d %s,", i+1, columnsFromSnowflake.get(i)));
-        }
-
-        sb.append(String.format("$%d %s", columnsFromSnowflake.size()+1, IHOP));
         return sb.toString();
     }
 
