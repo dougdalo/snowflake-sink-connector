@@ -272,7 +272,7 @@ public class SnowflakeSinkTask extends SinkTask {
             for (String columnFromSnowflakeTable : columnsFromTable) {
                 if (recordInBuffer.containsKey(columnFromSnowflakeTable)) {
                     var valueFromRecord = recordInBuffer.get(columnFromSnowflakeTable);
-                    if (containsAny(columnFromSnowflakeTable, timestampFieldsConvertToSeconds)) {
+                    if (valueFromRecord != null && containsAny(columnFromSnowflakeTable, timestampFieldsConvertToSeconds)) {
                         var valueFromRecordAsLong = (long) valueFromRecord;
                         valueFromRecord = valueFromRecordAsLong / 1000;
                     }
