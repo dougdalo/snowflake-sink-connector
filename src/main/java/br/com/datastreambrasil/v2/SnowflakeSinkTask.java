@@ -150,8 +150,8 @@ public class SnowflakeSinkTask extends SinkTask {
                                 generateJoinClauseToMerge(),
                                 generateUpdateSetClauseToMerge(),generateInsertClauseToMerge());
 
-                    LOGGER.debug("statement 1: {}", command1);
-                    LOGGER.debug("statement 2: {}", command2);
+                    LOGGER.info("statement 1: {}", command1);
+                    LOGGER.info("statement 2: {}", command2);
                     stmt.executeUpdate(command1);
                     stmt.executeUpdate(command2);
                 }
@@ -229,7 +229,7 @@ public class SnowflakeSinkTask extends SinkTask {
             sb.append(String.format(" target.%s = source.%s", pks.get(i),pks.get(i)));
 
             if (i+1 < pks.size()){
-                sb.append(", ");
+                sb.append(" AND ");
             }
         }
 
