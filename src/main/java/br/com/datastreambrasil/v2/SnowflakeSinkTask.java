@@ -30,10 +30,8 @@ public class SnowflakeSinkTask extends SinkTask {
     private String stageName;
     private String tableName;
     private String schemaName;
-    private final List<String> pks = new ArrayList<>();
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final Collection<Map<String, Object>> buffer = new ArrayList<>();
-    private final List<String> columnsFromSnowflake = new ArrayList<>();
     private static final String PAYLOAD = "payload";
     private static final String AFTER = "after";
     private static final String BEFORE = "before";
@@ -57,9 +55,6 @@ public class SnowflakeSinkTask extends SinkTask {
             tableName = map.get(SnowflakeSinkConnector.CFG_TABLE_NAME);
             schemaName = map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
 
-            if (map.containsKey(SnowflakeSinkConnector.CFG_PK_LIST)) {
-                pks.addAll(Arrays.stream(map.get(SnowflakeSinkConnector.CFG_PK_LIST).split(",")).toList());
-            }
 
             if (map.containsKey(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS)) {
                 timestampFieldsConvertToSeconds.addAll(Arrays.stream(map.get(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS).split(",")).toList());
@@ -137,103 +132,28 @@ public class SnowflakeSinkTask extends SinkTask {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
-                    String command1 = String.format("""
-                            CREATE OR REPLACE TEMPORARY TABLE "%s" AS
-                            SELECT %s FROM @%s/%s.gz;""",destFileName,generateSelectFieldsInStageToMerge(), stageName,destFileName);
-                    String command2 = String.format("""
-                                MERGE INTO %s target USING (select * from "%s") source ON %s
-                                WHEN MATCHED AND source.ih_op = 'd' THEN DELETE
-                                WHEN MATCHED AND source.ih_op <> 'd' THEN
-                                  %s
-                                WHEN NOT MATCHED THEN
-                                  %s;""", tableName, destFileName,
-                                generateJoinClauseToMerge(),
-                                generateUpdateSetClauseToMerge(),generateInsertClauseToMerge());
-
-                    LOGGER.info("statement 1: {}", command1);
-                    LOGGER.info("statement 2: {}", command2);
-                    stmt.executeUpdate(command1);
-                    stmt.executeUpdate(command2);
+                    String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
+                    LOGGER.debug("Copying statement: {}", copyInto);
+                    stmt.executeUpdate(copyInto);
                 }
             }
 
 
         } catch (Throwable e) {
-            LOGGER.error("Error while flushing Snowflake connector", e);
-            throw new RuntimeException("Error while flushing", e);
-        } finally {
-            buffer.clear();
-
             try {
                 try (var stmt = connection.createStatement()){
                     String removeFileFromStage = String.format("REMOVE @%s/%s.gz", stageName, destFileName);
                     stmt.execute(removeFileFromStage);
                 }
             }catch (Throwable e2){
-                LOGGER.error("Error while removing file [{}] from stage {}", destFileName, stageName, e2);
+                throw new RuntimeException("Error while removing file ["+destFileName+"] from stage " + stageName, e2);
             }
+
+            LOGGER.error("Error while flushing Snowflake connector", e);
+            throw new RuntimeException("Error while flushing", e);
+        } finally {
+            buffer.clear();
         }
-    }
-
-    private String generateSelectFieldsInStageToMerge() {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < columnsFromSnowflake.size(); i++){
-            sb.append(String.format(" $%d %s,", i+1, columnsFromSnowflake.get(i)));
-        }
-
-        sb.append(String.format("$%d %s", columnsFromSnowflake.size()+1, IHOP));
-        return sb.toString();
-    }
-
-    private String generateInsertClauseToMerge() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("INSERT (");
-        for (int i = 0; i < columnsFromSnowflake.size(); i++){
-            sb.append(String.format("%s", columnsFromSnowflake.get(i)));
-
-            if (i+1 < columnsFromSnowflake.size()) {
-                sb.append(", ");
-            }
-        }
-
-        sb.append(") VALUES (");
-        for (int i = 0; i < columnsFromSnowflake.size(); i++){
-            sb.append(String.format("source.%s", columnsFromSnowflake.get(i)));
-
-            if (i+1 < columnsFromSnowflake.size()) {
-                sb.append(", ");
-            }
-        }
-        sb.append(")");
-
-        return sb.toString();
-    }
-
-    private String generateUpdateSetClauseToMerge() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("UPDATE SET ");
-        for (int i = 0; i < columnsFromSnowflake.size(); i++){
-            sb.append(String.format("target.%s = source.%s", columnsFromSnowflake.get(i),columnsFromSnowflake.get(i)));
-
-            if (i+1 < columnsFromSnowflake.size()) {
-                sb.append(", ");
-            }
-        }
-
-        return sb.toString();
-    }
-
-    private String generateJoinClauseToMerge() {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < pks.size(); i++){
-            sb.append(String.format(" target.%s = source.%s", pks.get(i),pks.get(i)));
-
-            if (i+1 < pks.size()){
-                sb.append(" AND ");
-            }
-        }
-
-        return sb.toString();
     }
 
 
@@ -247,7 +167,6 @@ public class SnowflakeSinkTask extends SinkTask {
             throw new RuntimeException("missing or null key [" + fieldToValidate + "] on json");
         }
     }
-
 
     private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable() throws Throwable {
         var metadata = connection.getMetaData();
@@ -263,15 +182,15 @@ public class SnowflakeSinkTask extends SinkTask {
         }
 
         LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
-        columnsFromSnowflake.clear();
-        columnsFromSnowflake.addAll(columnsFromTable);
 
         var csvInMemory = new ByteArrayOutputStream();
 
         for (var recordInBuffer : buffer) {
-            for (String columnFromSnowflakeTable : columnsFromTable) {
+            for (int i = 0; i < columnsFromTable.size(); i++) {
+                var columnFromSnowflakeTable = columnsFromTable.get(i);
                 if (recordInBuffer.containsKey(columnFromSnowflakeTable)) {
                     var valueFromRecord = recordInBuffer.get(columnFromSnowflakeTable);
+
                     if (valueFromRecord != null && containsAny(columnFromSnowflakeTable, timestampFieldsConvertToSeconds)) {
                         var valueFromRecordAsLong = (long) valueFromRecord;
                         valueFromRecord = valueFromRecordAsLong / 1000;
@@ -285,11 +204,11 @@ public class SnowflakeSinkTask extends SinkTask {
                     LOGGER.warn("Column {} not found on buffer, inserted empty value", columnFromSnowflakeTable);
                 }
 
-                csvInMemory.writeBytes(",".getBytes());
+                if (i < columnsFromTable.size() - 1) {
+                    csvInMemory.writeBytes(",".getBytes());
+                }
             }
 
-            var strBuffer = "\"" +recordInBuffer.get(IHOP).toString() + "\"";
-            csvInMemory.writeBytes(strBuffer.getBytes());
             csvInMemory.writeBytes("\n".getBytes());
         }
 
