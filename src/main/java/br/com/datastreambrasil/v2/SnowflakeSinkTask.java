@@ -4,12 +4,15 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.UUID;
 import net.snowflake.client.jdbc.SnowflakeConnection;
@@ -19,7 +22,6 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 
 @SuppressWarnings("unchecked")
 public class SnowflakeSinkTask extends SinkTask {
@@ -50,17 +52,18 @@ public class SnowflakeSinkTask extends SinkTask {
     @Override
     public void start(Map<String, String> map) {
         try {
-            //init configs
+            // init configs
             stageName = map.get(SnowflakeSinkConnector.CFG_STAGE_NAME);
             tableName = map.get(SnowflakeSinkConnector.CFG_TABLE_NAME);
             schemaName = map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
 
-
             if (map.containsKey(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS)) {
-                timestampFieldsConvertToSeconds.addAll(Arrays.stream(map.get(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS).split(",")).toList());
+                timestampFieldsConvertToSeconds.addAll(
+                        Arrays.stream(map.get(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS).split(","))
+                                .toList());
             }
 
-            //init connection
+            // init connection
             var properties = new Properties();
             properties.put("user", map.get(SnowflakeSinkConnector.CFG_USER));
             properties.put("password", map.get(SnowflakeSinkConnector.CFG_PASSWORD));
@@ -71,7 +74,6 @@ public class SnowflakeSinkTask extends SinkTask {
             throw new RuntimeException("Error while starting Snowflake connector", e);
         }
     }
-
 
     @Override
     public void put(Collection<SinkRecord> collection) {
@@ -94,11 +96,12 @@ public class SnowflakeSinkTask extends SinkTask {
                 }
 
                 if (record.topic() == null || record.kafkaPartition() == null) {
-                    LOGGER.error("Null values for topic or kafkaPartition. Topic {}, KafkaPartition {}", record.topic(), record.kafkaPartition());
+                    LOGGER.error("Null values for topic or kafkaPartition. Topic {}, KafkaPartition {}", record.topic(),
+                            record.kafkaPartition());
                     throw new RuntimeException("Null values for topic or kafkaPartition");
                 }
 
-                //topic,partition,offset,operation
+                // topic,partition,offset,operation
                 mapPayloadAfterBefore.put(IHTOPIC, record.topic());
                 mapPayloadAfterBefore.put(IHPARTITION, record.kafkaPartition());
                 mapPayloadAfterBefore.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
@@ -124,29 +127,30 @@ public class SnowflakeSinkTask extends SinkTask {
 
         var destFileName = UUID.randomUUID().toString();
         try {
-            LOGGER.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName, tableName);
-
+            LOGGER.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName,
+                    tableName);
 
             try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable();
-                 var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())){
+                    var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())) {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
-                    String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName, destFileName);
+                    String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName,
+                            destFileName);
                     LOGGER.debug("Copying statement: {}", copyInto);
                     stmt.executeUpdate(copyInto);
                 }
             }
 
-
         } catch (Throwable e) {
             try {
-                try (var stmt = connection.createStatement()){
+                try (var stmt = connection.createStatement()) {
                     String removeFileFromStage = String.format("REMOVE @%s/%s.gz", stageName, destFileName);
                     stmt.execute(removeFileFromStage);
                 }
-            }catch (Throwable e2){
-                throw new RuntimeException("Error while removing file ["+destFileName+"] from stage " + stageName, e2);
+            } catch (Throwable e2) {
+                throw new RuntimeException("Error while removing file [" + destFileName + "] from stage " + stageName,
+                        e2);
             }
 
             LOGGER.error("Error while flushing Snowflake connector", e);
@@ -155,7 +159,6 @@ public class SnowflakeSinkTask extends SinkTask {
             buffer.clear();
         }
     }
-
 
     @Override
     public void stop() {
@@ -177,8 +180,9 @@ public class SnowflakeSinkTask extends SinkTask {
                 columnsFromTable.add(rsColumns.getString("COLUMN_NAME").toUpperCase());
             }
         }
-        if (columnsFromTable.isEmpty()){
-            throw new RuntimeException("Empty columns returned from target table "+tableName+", schema "+ schemaName);
+        if (columnsFromTable.isEmpty()) {
+            throw new RuntimeException(
+                    "Empty columns returned from target table " + tableName + ", schema " + schemaName);
         }
 
         LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
@@ -191,9 +195,11 @@ public class SnowflakeSinkTask extends SinkTask {
                 if (recordInBuffer.containsKey(columnFromSnowflakeTable)) {
                     var valueFromRecord = recordInBuffer.get(columnFromSnowflakeTable);
 
-                    if (valueFromRecord != null && containsAny(columnFromSnowflakeTable, timestampFieldsConvertToSeconds)) {
+                    if (valueFromRecord != null
+                            && containsAny(columnFromSnowflakeTable, timestampFieldsConvertToSeconds)) {
                         var valueFromRecordAsLong = (long) valueFromRecord;
-                        valueFromRecord = valueFromRecordAsLong / 1000;
+                        valueFromRecord = LocalDateTime.ofInstant(Instant.ofEpochMilli(valueFromRecordAsLong),
+                                TimeZone.getDefault().toZoneId()).toString();
                     }
 
                     if (valueFromRecord != null) {
@@ -215,10 +221,9 @@ public class SnowflakeSinkTask extends SinkTask {
         return csvInMemory;
     }
 
-
-    private boolean containsAny(String checkValue, List<String> values){
-        for (String s : values){
-            if (s.trim().equalsIgnoreCase(checkValue.trim())){
+    private boolean containsAny(String checkValue, List<String> values) {
+        for (String s : values) {
+            if (s.trim().equalsIgnoreCase(checkValue.trim())) {
                 return true;
             }
         }
