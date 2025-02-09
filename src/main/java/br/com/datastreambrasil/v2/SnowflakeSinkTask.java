@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -18,8 +19,16 @@ import java.util.UUID;
 import net.snowflake.client.jdbc.SnowflakeConnection;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
+import org.quartz.JobBuilder;
+import org.quartz.JobDataMap;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.SimpleScheduleBuilder;
+import org.quartz.TriggerBuilder;
+import org.quartz.impl.StdSchedulerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +42,7 @@ public class SnowflakeSinkTask extends SinkTask {
     private String tableName;
     private String schemaName;
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
+    private final List<String> pks = new ArrayList<>();
     private final Collection<Map<String, Object>> buffer = new ArrayList<>();
     private static final String PAYLOAD = "payload";
     private static final String AFTER = "after";
@@ -43,6 +53,10 @@ public class SnowflakeSinkTask extends SinkTask {
     private static final String IHPARTITION = "ih_partition";
     private static final String IHOP = "ih_op";
     private static final String DELETE = "d";
+    private Scheduler scheduler;
+
+    // quartz constants
+    protected static final String KEY_SNOWFLAKE_CONNECTION = "snowflakeConnection";
 
     @Override
     public String version() {
@@ -52,14 +66,23 @@ public class SnowflakeSinkTask extends SinkTask {
     @Override
     public void start(Map<String, String> map) {
         try {
+            AbstractConfig config = new AbstractConfig(SnowflakeSinkConnector.CONFIG_DEF, map);
+
             // init configs
-            stageName = map.get(SnowflakeSinkConnector.CFG_STAGE_NAME);
-            tableName = map.get(SnowflakeSinkConnector.CFG_TABLE_NAME);
-            schemaName = map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
+            stageName = config.getString(SnowflakeSinkConnector.CFG_STAGE_NAME);
+            tableName = config.getString(SnowflakeSinkConnector.CFG_TABLE_NAME);
+            schemaName = config.getString(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
+            var intervalHoursCleanup = config.getInt(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
 
             if (map.containsKey(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS)) {
                 timestampFieldsConvertToSeconds.addAll(
                         Arrays.stream(map.get(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS).split(","))
+                                .toList());
+            }
+
+            if (map.containsKey(SnowflakeSinkConnector.CFG_PK)) {
+                pks.addAll(
+                        Arrays.stream(map.get(SnowflakeSinkConnector.CFG_PK).split(","))
                                 .toList());
             }
 
@@ -69,6 +92,24 @@ public class SnowflakeSinkTask extends SinkTask {
             properties.put("password", map.get(SnowflakeSinkConnector.CFG_PASSWORD));
             connection = DriverManager.getConnection(map.get(SnowflakeSinkConnector.CFG_URL), properties);
             snowflakeConnection = connection.unwrap(SnowflakeConnection.class);
+
+            // job quartz config
+            var jobData = new HashMap<String, Object>();
+            jobData.put(KEY_SNOWFLAKE_CONNECTION, connection);
+            jobData.put(SnowflakeSinkConnector.CFG_TABLE_NAME, tableName);
+            jobData.put(SnowflakeSinkConnector.CFG_PK, pks);
+
+            var schedulerFactory = new StdSchedulerFactory();
+            scheduler = schedulerFactory.getScheduler();
+            var job = JobBuilder.newJob(CleanupJob.class).withIdentity("cleanupjob")
+                    .setJobData(new JobDataMap(jobData))
+                    .build();
+            var trigger = TriggerBuilder.newTrigger().withIdentity("trigger_cleanupjob")
+                    .withSchedule(SimpleScheduleBuilder.repeatHourlyForever(intervalHoursCleanup))
+                    .build();
+            scheduler.scheduleJob(job, trigger);
+            scheduler.start();
+
         } catch (Throwable e) {
             LOGGER.error("Error while starting Snowflake connector", e);
             throw new RuntimeException("Error while starting Snowflake connector", e);
@@ -162,6 +203,13 @@ public class SnowflakeSinkTask extends SinkTask {
 
     @Override
     public void stop() {
+        if (scheduler != null) {
+            try {
+                scheduler.shutdown();
+            } catch (SchedulerException e) {
+                LOGGER.error("Can not shutdown quartz scheduler", e);
+            }
+        }
     }
 
     private void validateFieldOnMap(String fieldToValidate, Map<String, ?> map) {

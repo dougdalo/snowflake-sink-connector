@@ -17,6 +17,8 @@ public class SnowflakeSinkConnector extends SinkConnector {
     protected static final String CFG_URL = "url";
     protected static final String CFG_USER = "user";
     protected static final String CFG_PASSWORD = "password";
+    protected static final String CFG_PK = "pk";
+    protected static final String CFG_JOB_CLEANUP_HOURS = "job_cleanup_hours";
 
     static final ConfigDef CONFIG_DEF = new ConfigDef()
             .define(CFG_STAGE_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
@@ -31,6 +33,10 @@ public class SnowflakeSinkConnector extends SinkConnector {
                     "Target table to copy data into")
             .define(CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
                     "List of timestamp fields we should convert to seconds")
+            .define(CFG_PK, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
+                    "List of primary keys to be used")
+            .define(CFG_JOB_CLEANUP_HOURS, ConfigDef.Type.INT, 4, ConfigDef.Importance.MEDIUM,
+                    "Interval in hours to cleanup old data")
             .define(CFG_SCHEMA_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
                     "Target schema to copy data into");
 
