@@ -99,7 +99,12 @@ public class SnowflakeSinkTask extends SinkTask {
             jobData.put(SnowflakeSinkConnector.CFG_TABLE_NAME, tableName);
             jobData.put(SnowflakeSinkConnector.CFG_PK, pks);
 
-            var schedulerFactory = new StdSchedulerFactory();
+            var uuid = UUID.randomUUID().toString();
+            var props = new Properties();
+            props.setProperty(StdSchedulerFactory.PROP_SCHED_INSTANCE_NAME, "cleanup_" + uuid);
+            props.setProperty("org.quartz.threadPool.threadCount", "1");
+
+            var schedulerFactory = new StdSchedulerFactory(props);
             scheduler = schedulerFactory.getScheduler();
             var job = JobBuilder.newJob(CleanupJob.class).withIdentity("cleanupjob")
                     .setJobData(new JobDataMap(jobData))
