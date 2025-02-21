@@ -2,6 +2,7 @@ package br.com.datastreambrasil.v2;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.time.Instant;
@@ -257,7 +258,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
                     if (valueFromRecord != null) {
                         var strBuffer = "\"" + valueFromRecord + "\"";
-                        csvInMemory.writeBytes(strBuffer.getBytes());
+                        csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
                     }
                 } else {
                     LOGGER.warn("Column {} not found on buffer, inserted empty value", columnFromSnowflakeTable);
