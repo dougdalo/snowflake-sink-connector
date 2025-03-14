@@ -73,6 +73,7 @@ public class SnowflakeSinkTask extends SinkTask {
             stageName = config.getString(SnowflakeSinkConnector.CFG_STAGE_NAME);
             tableName = config.getString(SnowflakeSinkConnector.CFG_TABLE_NAME);
             schemaName = config.getString(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
+            var disableCleanUpJob = config.getBoolean(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DISABLE);
             var intervalHoursCleanup = config.getInt(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
 
             if (map.containsKey(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS)) {
@@ -95,26 +96,30 @@ public class SnowflakeSinkTask extends SinkTask {
             snowflakeConnection = connection.unwrap(SnowflakeConnection.class);
 
             // job quartz config
-            var jobData = new HashMap<String, Object>();
-            jobData.put(KEY_SNOWFLAKE_CONNECTION, connection);
-            jobData.put(SnowflakeSinkConnector.CFG_TABLE_NAME, tableName);
-            jobData.put(SnowflakeSinkConnector.CFG_PK, pks);
+            if (!disableCleanUpJob) {
+                var jobData = new HashMap<String, Object>();
+                jobData.put(KEY_SNOWFLAKE_CONNECTION, connection);
+                jobData.put(SnowflakeSinkConnector.CFG_TABLE_NAME, tableName);
+                jobData.put(SnowflakeSinkConnector.CFG_PK, pks);
 
-            var uuid = UUID.randomUUID().toString();
-            var props = new Properties();
-            props.setProperty(StdSchedulerFactory.PROP_SCHED_INSTANCE_NAME, "cleanup_" + uuid);
-            props.setProperty("org.quartz.threadPool.threadCount", "1");
+                var uuid = UUID.randomUUID().toString();
+                var props = new Properties();
+                props.setProperty(StdSchedulerFactory.PROP_SCHED_INSTANCE_NAME, "cleanup_" + uuid);
+                props.setProperty("org.quartz.threadPool.threadCount", "1");
 
-            var schedulerFactory = new StdSchedulerFactory(props);
-            scheduler = schedulerFactory.getScheduler();
-            var job = JobBuilder.newJob(CleanupJob.class).withIdentity("cleanupjob")
-                    .setJobData(new JobDataMap(jobData))
-                    .build();
-            var trigger = TriggerBuilder.newTrigger().withIdentity("trigger_cleanupjob")
-                    .withSchedule(SimpleScheduleBuilder.repeatHourlyForever(intervalHoursCleanup))
-                    .build();
-            scheduler.scheduleJob(job, trigger);
-            scheduler.start();
+                var schedulerFactory = new StdSchedulerFactory(props);
+                scheduler = schedulerFactory.getScheduler();
+                var job = JobBuilder.newJob(CleanupJob.class).withIdentity("cleanupjob")
+                        .setJobData(new JobDataMap(jobData))
+                        .build();
+                var trigger = TriggerBuilder.newTrigger().withIdentity("trigger_cleanupjob")
+                        .withSchedule(SimpleScheduleBuilder.repeatHourlyForever(intervalHoursCleanup))
+                        .build();
+                scheduler.scheduleJob(job, trigger);
+                scheduler.start();
+            } else {
+                LOGGER.warn("Cleanup job is disabled");
+            }
 
         } catch (Throwable e) {
             LOGGER.error("Error while starting Snowflake connector", e);
