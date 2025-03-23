@@ -20,6 +20,18 @@ public class SnowflakeSinkConnector extends SinkConnector {
         protected static final String CFG_PK = "pk";
         protected static final String CFG_JOB_CLEANUP_HOURS = "job_cleanup_hours";
         protected static final String CFG_JOB_CLEANUP_DISABLE = "job_cleanup_disable";
+        protected static final String CFG_PAYLOAD_CDC_FORMAT = "payload_cdc_format";
+
+        /*
+         * For some use cases we need to load all data again, each time. So we have two
+         * parameters to allow this:
+         * always_truncate_before_bulk: If true, we will truncate the table before
+         * copying it to snowflake.
+         * truncate_when_nodata_after_seconds: If we don't receive any event for this
+         * amount of time, we will truncate the table in snowflake.
+         */
+        protected static final String CFG_ALWAYS_TRUNCATE_BEFORE_BULK = "always_truncate_before_bulk";
+        protected static final String CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS = "truncate_when_nodata_after_seconds";
 
         static final ConfigDef CONFIG_DEF = new ConfigDef()
                         .define(CFG_STAGE_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
@@ -42,7 +54,15 @@ public class SnowflakeSinkConnector extends SinkConnector {
                         .define(CFG_SCHEMA_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
                                         "Target schema to copy data into")
                         .define(CFG_JOB_CLEANUP_DISABLE, ConfigDef.Type.BOOLEAN, false, ConfigDef.Importance.HIGH,
-                                        "Disable clean up job");
+                                        "Disable clean up job")
+                        .define(CFG_PAYLOAD_CDC_FORMAT, ConfigDef.Type.BOOLEAN, true, ConfigDef.Importance.HIGH,
+                                        "Set if payload is CDC format")
+                        .define(CFG_ALWAYS_TRUNCATE_BEFORE_BULK, ConfigDef.Type.BOOLEAN, false,
+                                        ConfigDef.Importance.HIGH,
+                                        "If true, we will truncate the table before copying it to snowflake")
+                        .define(CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS, ConfigDef.Type.INT, 1800,
+                                        ConfigDef.Importance.HIGH,
+                                        "If we don't receive any event for this amount of time, we will truncate the table in snowflake");
 
         private Map<String, String> props;
 

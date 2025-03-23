@@ -7,6 +7,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -42,6 +43,11 @@ public class SnowflakeSinkTask extends SinkTask {
     private String stageName;
     private String tableName;
     private String schemaName;
+    private boolean cdcFormat;
+    private boolean truncateBeforeBulk;
+    private int truncateWhenNoDataAfterSeconds;
+    private LocalDateTime lastFlush = LocalDateTime.now();
+
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final List<String> pks = new ArrayList<>();
     private final Collection<Map<String, Object>> buffer = new ArrayList<>();
@@ -73,6 +79,11 @@ public class SnowflakeSinkTask extends SinkTask {
             stageName = config.getString(SnowflakeSinkConnector.CFG_STAGE_NAME);
             tableName = config.getString(SnowflakeSinkConnector.CFG_TABLE_NAME);
             schemaName = config.getString(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
+            cdcFormat = config.getBoolean(SnowflakeSinkConnector.CFG_PAYLOAD_CDC_FORMAT);
+            truncateBeforeBulk = config.getBoolean(SnowflakeSinkConnector.CFG_ALWAYS_TRUNCATE_BEFORE_BULK);
+            truncateWhenNoDataAfterSeconds = config
+                    .getInt(SnowflakeSinkConnector.CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS);
+
             var disableCleanUpJob = config.getBoolean(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DISABLE);
             var intervalHoursCleanup = config.getInt(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
 
@@ -131,21 +142,6 @@ public class SnowflakeSinkTask extends SinkTask {
     public void put(Collection<SinkRecord> collection) {
         try {
             for (SinkRecord record : collection) {
-                var mapValue = (Map<String, Object>) record.value();
-
-                validateFieldOnMap(PAYLOAD, mapValue);
-                var mapPayload = (Map<String, Object>) mapValue.get(PAYLOAD);
-
-                validateFieldOnMap(OP, mapPayload);
-                var op = mapPayload.get(OP);
-                Map<String, Object> mapPayloadAfterBefore;
-                if (op.equals(DELETE)) {
-                    validateFieldOnMap(BEFORE, mapPayload);
-                    mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(BEFORE);
-                } else {
-                    validateFieldOnMap(AFTER, mapPayload);
-                    mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(AFTER);
-                }
 
                 if (record.topic() == null || record.kafkaPartition() == null) {
                     LOGGER.error("Null values for topic or kafkaPartition. Topic {}, KafkaPartition {}", record.topic(),
@@ -153,21 +149,58 @@ public class SnowflakeSinkTask extends SinkTask {
                     throw new RuntimeException("Null values for topic or kafkaPartition");
                 }
 
-                // topic,partition,offset,operation
-                mapPayloadAfterBefore.put(IHTOPIC, record.topic());
-                mapPayloadAfterBefore.put(IHPARTITION, record.kafkaPartition());
-                mapPayloadAfterBefore.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
-                mapPayloadAfterBefore.put(IHOP, String.valueOf(mapPayload.get(OP)));
+                var mapValue = (Map<String, Object>) record.value();
 
-                var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-                mapCaseInsensitive.putAll(mapPayloadAfterBefore);
-
-                buffer.add(mapCaseInsensitive);
+                if (cdcFormat) {
+                    addRecordUsingCDCFormat(mapValue, record);
+                } else {
+                    addRecordUsingPlainFormat(mapValue, record);
+                }
             }
         } catch (Throwable e) {
             LOGGER.error("Error while putting records", e);
             throw new RuntimeException("Error while putting records", e);
         }
+    }
+
+    private void addRecordUsingPlainFormat(Map<String, Object> mapValue, SinkRecord record) {
+        var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        mapCaseInsensitive.putAll(mapValue);
+
+        // topic,partition,offset,operation
+        mapCaseInsensitive.put(IHTOPIC, record.topic());
+        mapCaseInsensitive.put(IHPARTITION, record.kafkaPartition());
+        mapCaseInsensitive.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
+        mapCaseInsensitive.put(IHOP, "c");
+
+        buffer.add(mapCaseInsensitive);
+    }
+
+    private void addRecordUsingCDCFormat(Map<String, Object> mapValue, SinkRecord record) {
+        validateFieldOnMap(PAYLOAD, mapValue);
+        var mapPayload = (Map<String, Object>) mapValue.get(PAYLOAD);
+
+        validateFieldOnMap(OP, mapPayload);
+        var op = mapPayload.get(OP);
+        Map<String, Object> mapPayloadAfterBefore;
+        if (op.equals(DELETE)) {
+            validateFieldOnMap(BEFORE, mapPayload);
+            mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(BEFORE);
+        } else {
+            validateFieldOnMap(AFTER, mapPayload);
+            mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(AFTER);
+        }
+
+        // topic,partition,offset,operation
+        mapPayloadAfterBefore.put(IHTOPIC, record.topic());
+        mapPayloadAfterBefore.put(IHPARTITION, record.kafkaPartition());
+        mapPayloadAfterBefore.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
+        mapPayloadAfterBefore.put(IHOP, String.valueOf(mapPayload.get(OP)));
+
+        var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        mapCaseInsensitive.putAll(mapPayloadAfterBefore);
+
+        buffer.add(mapCaseInsensitive);
     }
 
     @Override
@@ -181,6 +214,22 @@ public class SnowflakeSinkTask extends SinkTask {
         try {
             LOGGER.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName,
                     tableName);
+
+            /*
+             * truncate if truncateBeforeFlush is true and last flush was more than 30
+             * minutes ago
+             */
+            var minutesLastFlush = ChronoUnit.MINUTES.between(lastFlush, LocalDateTime.now());
+            if (truncateBeforeBulk && minutesLastFlush > 30) {
+                try (var stmt = connection.createStatement()) {
+                    String truncateTable = String.format("TRUNCATE TABLE %s", tableName);
+                    LOGGER.debug("Truncating table: {}", truncateTable);
+                    stmt.executeUpdate(truncateTable);
+                } catch (Throwable e) {
+                    LOGGER.error("Error while truncating table", e);
+                    throw new RuntimeException("Error while truncating table", e);
+                }
+            }
 
             try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable();
                     var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())) {
@@ -209,6 +258,7 @@ public class SnowflakeSinkTask extends SinkTask {
             throw new RuntimeException("Error while flushing", e);
         } finally {
             buffer.clear();
+            lastFlush = LocalDateTime.now();
         }
     }
 
