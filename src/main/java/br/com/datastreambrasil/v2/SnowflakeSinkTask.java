@@ -220,7 +220,7 @@ public class SnowflakeSinkTask extends SinkTask {
              * minutes ago
              */
             var minutesLastFlush = ChronoUnit.MINUTES.between(lastFlush, LocalDateTime.now());
-            if (truncateBeforeBulk && minutesLastFlush > (truncateWhenNoDataAfterSeconds * 60)) {
+            if (truncateBeforeBulk && minutesLastFlush > (truncateWhenNoDataAfterSeconds / 60)) {
                 try (var stmt = connection.createStatement()) {
                     String truncateTable = String.format("TRUNCATE TABLE %s", tableName);
                     LOGGER.debug("Truncating table: {}", truncateTable);
