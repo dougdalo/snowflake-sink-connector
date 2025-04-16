@@ -363,14 +363,13 @@ public class SnowflakeSinkTask extends SinkTask {
                                 TimeZone.getDefault().toZoneId()).toString();
                     }
 
-                    if (columnFromSnowflakeTable.equalsIgnoreCase(IHBLOCKID)){
-                        valueFromRecord = blockID;
-                    }
-
                     if (valueFromRecord != null) {
                         var strBuffer = "\"" + valueFromRecord + "\"";
                         csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
                     }
+                } else if (columnFromSnowflakeTable.equalsIgnoreCase(blockID)) {
+                    var strBuffer = "\"" + blockID + "\"";
+                    csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
                 } else {
                     LOGGER.warn("Column {} not found on buffer, inserted empty value", columnFromSnowflakeTable);
                 }
