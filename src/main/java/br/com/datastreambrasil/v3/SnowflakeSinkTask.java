@@ -19,6 +19,8 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
@@ -180,8 +182,8 @@ public class SnowflakeSinkTask extends SinkTask {
         mapCaseInsensitive.put(IHTOPIC, record.topic());
         mapCaseInsensitive.put(IHPARTITION, record.kafkaPartition());
         mapCaseInsensitive.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
-        mapCaseInsensitive.put(IHOP, debeziumOperation.c);
-        mapCaseInsensitive.put(IHDATETIME, LocalDateTime.now());
+        mapCaseInsensitive.put(IHOP, debeziumOperation.c.toString());
+        mapCaseInsensitive.put(IHDATETIME, LocalDateTime.now(ZoneOffset.UTC));
 
         buffer.add(mapCaseInsensitive);
     }
@@ -192,10 +194,10 @@ public class SnowflakeSinkTask extends SinkTask {
 
         validateFieldOnMap(OP, mapPayload);
         var op = mapPayload.get(OP);
-        snapshotMode = op.equals(debeziumOperation.r);
+        snapshotMode = op.equals(debeziumOperation.r.toString());
 
         Map<String, Object> mapPayloadAfterBefore;
-        if (op.equals(debeziumOperation.d)) {
+        if (op.equals(debeziumOperation.d.toString())) {
             validateFieldOnMap(BEFORE, mapPayload);
             mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(BEFORE);
         } else {
@@ -208,7 +210,7 @@ public class SnowflakeSinkTask extends SinkTask {
         mapPayloadAfterBefore.put(IHPARTITION, record.kafkaPartition());
         mapPayloadAfterBefore.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
         mapPayloadAfterBefore.put(IHOP, String.valueOf(mapPayload.get(OP)));
-        mapPayloadAfterBefore.put(IHDATETIME, LocalDateTime.now());
+        mapPayloadAfterBefore.put(IHDATETIME, LocalDateTime.now(ZoneOffset.UTC));
 
         var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         mapCaseInsensitive.putAll(mapPayloadAfterBefore);
@@ -274,7 +276,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
                         //delete from final table
                         String deleteFromFinalTable = String.format(
-                                "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE %s = %s) AS ingest WHERE %s",
+                                "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE %s = '%s') AS ingest WHERE %s",
                                 tableName, String.join(",", pks), ingestTableName, IHBLOCKID, blockID,
                                 buildPkWhereClause(pks, "final", "ingest"));
                         LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
@@ -282,7 +284,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
                         //insert in final table
                         String insertIntoFinalTable = String.format(
-                                "INSERT INTO %s SELECT * EXCLUDE %s FROM %s WHERE %s = %s and %s != '%s'", tableName, buildExcludeColumns(), ingestTableName, IHBLOCKID, blockID, IHOP, debeziumOperation.d);
+                                "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE %s = '%s' and %s != '%s'", tableName, buildExcludeColumns(), ingestTableName, IHBLOCKID, blockID, IHOP, debeziumOperation.d);
                         LOGGER.debug("Inserting statement to final table: {}", insertIntoFinalTable);
                         stmt.executeUpdate(insertIntoFinalTable);
                     }
@@ -367,7 +369,7 @@ public class SnowflakeSinkTask extends SinkTask {
                         var strBuffer = "\"" + valueFromRecord + "\"";
                         csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
                     }
-                } else if (columnFromSnowflakeTable.equalsIgnoreCase(blockID)) {
+                } else if (columnFromSnowflakeTable.equalsIgnoreCase(IHBLOCKID)) {
                     var strBuffer = "\"" + blockID + "\"";
                     csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
                 } else {
