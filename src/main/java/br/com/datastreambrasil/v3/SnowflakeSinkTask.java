@@ -71,6 +71,9 @@ public class SnowflakeSinkTask extends SinkTask {
     protected static final String KEY_SNOWFLAKE_CONNECTION = "snowflakeConnection";
     protected static final String KEY_SNOWFLAKE_INGEST_TABLE_NAME = "snowflakeIngestTableName";
 
+    private List<String> columnsFinalTable = new ArrayList<>();
+    private List<String> columnsIngestTable = new ArrayList<>();
+
     @Override
     public String version() {
         return SnowflakeSinkConnector.VERSION;
@@ -112,6 +115,10 @@ public class SnowflakeSinkTask extends SinkTask {
             properties.put("password", map.get(SnowflakeSinkConnector.CFG_PASSWORD));
             connection = DriverManager.getConnection(map.get(SnowflakeSinkConnector.CFG_URL), properties);
             snowflakeConnection = connection.unwrap(SnowflakeConnection.class);
+
+            //fill columns
+            columnsFinalTable = getColumnsFromMetadata(tableName);
+            columnsIngestTable = getColumnsFromMetadata(ingestTableName);
 
             // job quartz config
             if (!disableCleanUpJob) {
@@ -189,27 +196,25 @@ public class SnowflakeSinkTask extends SinkTask {
     }
 
     private void addRecordUsingCDCFormat(Map<String, Object> mapValue, SinkRecord record) {
-        validateFieldOnMap(PAYLOAD, mapValue);
-        var mapPayload = (Map<String, Object>) mapValue.get(PAYLOAD);
 
-        validateFieldOnMap(OP, mapPayload);
-        var op = mapPayload.get(OP);
+        validateFieldOnMap(OP, mapValue);
+        var op = mapValue.get(OP);
         snapshotMode = op.equals(debeziumOperation.r.toString());
 
         Map<String, Object> mapPayloadAfterBefore;
         if (op.equals(debeziumOperation.d.toString())) {
-            validateFieldOnMap(BEFORE, mapPayload);
-            mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(BEFORE);
+            validateFieldOnMap(BEFORE, mapValue);
+            mapPayloadAfterBefore = (Map<String, Object>) mapValue.get(BEFORE);
         } else {
-            validateFieldOnMap(AFTER, mapPayload);
-            mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(AFTER);
+            validateFieldOnMap(AFTER, mapValue);
+            mapPayloadAfterBefore = (Map<String, Object>) mapValue.get(AFTER);
         }
 
         // topic,partition,offset,operation
         mapPayloadAfterBefore.put(IHTOPIC, record.topic());
         mapPayloadAfterBefore.put(IHPARTITION, record.kafkaPartition());
         mapPayloadAfterBefore.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
-        mapPayloadAfterBefore.put(IHOP, String.valueOf(mapPayload.get(OP)));
+        mapPayloadAfterBefore.put(IHOP, String.valueOf(mapValue.get(OP)));
         mapPayloadAfterBefore.put(IHDATETIME, LocalDateTime.now(ZoneOffset.UTC));
 
         var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
@@ -221,6 +226,7 @@ public class SnowflakeSinkTask extends SinkTask {
     @Override
     public void flush(Map<TopicPartition, OffsetAndMetadata> currentOffsets) {
 
+        var startTime = System.currentTimeMillis();
         if (buffer.isEmpty()) {
             return;
         }
@@ -246,13 +252,19 @@ public class SnowflakeSinkTask extends SinkTask {
                 }
             }
 
+            var columnsFromMetadata = snapshotMode ? columnsFinalTable : columnsIngestTable;
             var blockID = UUID.randomUUID().toString();
-            try (var csvToInsert = snapshotMode ? prepareOrderedColumnsBasedOnTargetTable(blockID, tableName)
-                                                : prepareOrderedColumnsBasedOnTargetTable(blockID, ingestTableName);
+            var startTimeMain = System.currentTimeMillis();
+            try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable(blockID, columnsFromMetadata);
                     var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())) {
 
+                var startTimeUpload = System.currentTimeMillis();
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
+                var endTimeUpload = System.currentTimeMillis();
+                LOGGER.debug("Uploaded {} records in {} ms", buffer.size(), endTimeUpload - startTimeUpload);
+
+                var startTimeStatement = System.currentTimeMillis();
                 try (var stmt = connection.createStatement()) {
 
                     if (snapshotMode){
@@ -285,19 +297,44 @@ public class SnowflakeSinkTask extends SinkTask {
                         LOGGER.debug("Inserting statement to final table: {}", insertIntoFinalTable);
                         stmt.executeUpdate(insertIntoFinalTable);
                     }
+                    var endTimeStatement = System.currentTimeMillis();
+                    LOGGER.debug("Executed statement in {} ms", endTimeStatement - startTimeStatement);
 
                 } catch (SQLException e) {
                     throw new RuntimeException("Error executing operations",e);
                 }
             }
+            var endTimeMain = System.currentTimeMillis();
+            LOGGER.debug("Process records took {} ms", endTimeMain - startTimeMain);
 
         } catch (Throwable e) {
             LOGGER.error("Error while flushing Snowflake connector", e);
             throw new RuntimeException("Error while flushing", e);
         } finally {
+            var endTime = System.currentTimeMillis();
+            LOGGER.debug("Flushed {} records in {} ms", buffer.size(), endTime - startTime);
             buffer.clear();
             lastFlush = LocalDateTime.now();
         }
+    }
+
+    private List<String> getColumnsFromMetadata(String table) throws SQLException {
+        var metadata = connection.getMetaData();
+
+        var columnsFromTable = new ArrayList<String>();
+        try (var rsColumns = metadata.getColumns(null, schemaName.toUpperCase(), table.toUpperCase(), null)) {
+            while (rsColumns.next()) {
+                columnsFromTable.add(rsColumns.getString("COLUMN_NAME").toUpperCase());
+            }
+        }
+        if (columnsFromTable.isEmpty()) {
+            throw new RuntimeException(
+                    "Empty columns returned from target table " + table + ", schema " + schemaName);
+        }
+
+        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
+
+        return columnsFromTable;
     }
 
     private String buildExcludeColumns() {
@@ -328,22 +365,9 @@ public class SnowflakeSinkTask extends SinkTask {
         }
     }
 
-    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(String blockID, String table) throws Throwable {
-        var metadata = connection.getMetaData();
+    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(String blockID, List<String> columnsFromTable) throws Throwable {
 
-        var columnsFromTable = new ArrayList<String>();
-        try (var rsColumns = metadata.getColumns(null, schemaName.toUpperCase(), table.toUpperCase(), null)) {
-            while (rsColumns.next()) {
-                columnsFromTable.add(rsColumns.getString("COLUMN_NAME").toUpperCase());
-            }
-        }
-        if (columnsFromTable.isEmpty()) {
-            throw new RuntimeException(
-                    "Empty columns returned from target table " + table + ", schema " + schemaName);
-        }
-
-        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
-
+        var startTime = System.currentTimeMillis();
         var csvInMemory = new ByteArrayOutputStream();
 
         for (var recordInBuffer : buffer) {
@@ -378,6 +402,8 @@ public class SnowflakeSinkTask extends SinkTask {
             csvInMemory.writeBytes("\n".getBytes());
         }
 
+        var endTime = System.currentTimeMillis();
+        LOGGER.debug("Prepared csv in memory in {} ms", endTime - startTime);
         return csvInMemory;
     }
 

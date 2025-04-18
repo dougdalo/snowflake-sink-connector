@@ -22,7 +22,7 @@ public class CleanupJob implements Job {
         var intervalHours = jobData.get(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
 
         var deleteQuery = String.format("""
-                        delete from %s ingest where ih_datetime + interval '%s hour < sysdate()'
+                        delete from %s ingest where ih_datetime + interval '%s hour' < sysdate()
                 """, ingest, intervalHours);
 
         LOGGER.debug("Executing delete query: {}", deleteQuery);
