@@ -246,9 +246,6 @@ public class SnowflakeSinkTask extends SinkTask {
                 }
             }
 
-            // Disable auto commit, so we can commit manually
-            connection.setAutoCommit(false);
-
             var blockID = UUID.randomUUID().toString();
             try (var csvToInsert = snapshotMode ? prepareOrderedColumnsBasedOnTargetTable(blockID, tableName)
                                                 : prepareOrderedColumnsBasedOnTargetTable(blockID, ingestTableName);
@@ -289,11 +286,8 @@ public class SnowflakeSinkTask extends SinkTask {
                         stmt.executeUpdate(insertIntoFinalTable);
                     }
 
-                    connection.commit();
                 } catch (SQLException e) {
-                    LOGGER.warn("Rolling back transaction", e);
-                    connection.rollback();
-                    throw new RuntimeException("Error rolling back the transaction",e);
+                    throw new RuntimeException("Error executing operations",e);
                 }
             }
 
