@@ -22,6 +22,7 @@ public class SnowflakeSinkConnector extends SinkConnector {
         protected static final String CFG_JOB_CLEANUP_HOURS = "job_cleanup_hours";
         protected static final String CFG_JOB_CLEANUP_DISABLE = "job_cleanup_disable";
         protected static final String CFG_PAYLOAD_CDC_FORMAT = "payload_cdc_format";
+        protected static final String CFG_SNAPSHOT_MODE_DISABLE = "snapshot_mode_disable";
 
         /*
          * For some use cases we need to load all data again, each time. So we have two
@@ -61,6 +62,8 @@ public class SnowflakeSinkConnector extends SinkConnector {
                         .define(CFG_ALWAYS_TRUNCATE_BEFORE_BULK, ConfigDef.Type.BOOLEAN, false,
                                         ConfigDef.Importance.HIGH,
                                         "If true, we will truncate the table before copying it to snowflake")
+                        .define(CFG_SNAPSHOT_MODE_DISABLE, ConfigDef.Type.BOOLEAN, false, ConfigDef.Importance.HIGH,
+                                "If true, we will not use snapshot mode")
                         .define(CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS, ConfigDef.Type.INT, 1800,
                                         ConfigDef.Importance.HIGH,
                                         "If we don't receive any event for this amount of time, we will truncate the table in snowflake");

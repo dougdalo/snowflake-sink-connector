@@ -19,7 +19,6 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -42,7 +41,6 @@ public class SnowflakeSinkTask extends SinkTask {
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final List<String> pks = new ArrayList<>();
     private final Collection<Map<String, Object>> buffer = new ArrayList<>();
-    private static final String PAYLOAD = "payload";
     private static final String AFTER = "after";
     private static final String BEFORE = "before";
     private static final String OP = "op";
@@ -65,7 +63,8 @@ public class SnowflakeSinkTask extends SinkTask {
     * This flag is enabled while we are receiving only 'r' operation, so we can copy straight to the target table, don't need
      * ingest table. But if we receive a operation different than 'r', we disable this mode.
     * */
-    private boolean snapshotMode = true;
+    private boolean snapshotRecords = true;
+    private boolean snapshotMode = false;
 
     // quartz constants
     protected static final String KEY_SNOWFLAKE_CONNECTION = "snowflakeConnection";
@@ -93,6 +92,7 @@ public class SnowflakeSinkTask extends SinkTask {
             truncateBeforeBulk = config.getBoolean(SnowflakeSinkConnector.CFG_ALWAYS_TRUNCATE_BEFORE_BULK);
             truncateWhenNoDataAfterSeconds = config
                     .getInt(SnowflakeSinkConnector.CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS);
+            snapshotMode = config.getBoolean(SnowflakeSinkConnector.CFG_SNAPSHOT_MODE_DISABLE);
 
             var disableCleanUpJob = config.getBoolean(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DISABLE);
             var intervalHoursCleanup = config.getInt(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
@@ -181,7 +181,7 @@ public class SnowflakeSinkTask extends SinkTask {
      * Used when the data is ingested not from cdc but manually in the kafka, so we don't have the debezium format
      * */
     private void addRecordUsingPlainFormat(Map<String, Object> mapValue, SinkRecord record) {
-        snapshotMode = false;
+        snapshotRecords = false;
         var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         mapCaseInsensitive.putAll(mapValue);
 
@@ -199,7 +199,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
         validateFieldOnMap(OP, mapValue);
         var op = mapValue.get(OP);
-        snapshotMode = op.equals(debeziumOperation.r.toString());
+        snapshotRecords = op.equals(debeziumOperation.r.toString());
 
         Map<String, Object> mapPayloadAfterBefore;
         if (op.equals(debeziumOperation.d.toString())) {
@@ -225,6 +225,8 @@ public class SnowflakeSinkTask extends SinkTask {
 
     @Override
     public void flush(Map<TopicPartition, OffsetAndMetadata> currentOffsets) {
+
+        var useSnapshot = snapshotRecords && snapshotMode;
 
         var startTime = System.currentTimeMillis();
         if (buffer.isEmpty()) {
@@ -252,7 +254,7 @@ public class SnowflakeSinkTask extends SinkTask {
                 }
             }
 
-            var columnsFromMetadata = snapshotMode ? columnsFinalTable : columnsIngestTable;
+            var columnsFromMetadata = useSnapshot ? columnsFinalTable : columnsIngestTable;
             var blockID = UUID.randomUUID().toString();
             var startTimeMain = System.currentTimeMillis();
             try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable(blockID, columnsFromMetadata);
@@ -267,7 +269,7 @@ public class SnowflakeSinkTask extends SinkTask {
                 var startTimeStatement = System.currentTimeMillis();
                 try (var stmt = connection.createStatement()) {
 
-                    if (snapshotMode){
+                    if (useSnapshot){
 
                         //copy everything to ingest
                         String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName,
