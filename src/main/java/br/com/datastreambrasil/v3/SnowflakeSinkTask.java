@@ -371,6 +371,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
         var startTime = System.currentTimeMillis();
         var csvInMemory = new ByteArrayOutputStream();
+        var stringBuilder = new StringBuilder();
 
         for (var recordInBuffer : buffer) {
             for (int i = 0; i < columnsFromTable.size(); i++) {
@@ -387,23 +388,30 @@ public class SnowflakeSinkTask extends SinkTask {
 
                     if (valueFromRecord != null) {
                         var strBuffer = "\"" + valueFromRecord + "\"";
-                        csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
+                        stringBuilder.append(strBuffer);
+//                        csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
                     }
                 } else if (columnFromSnowflakeTable.equalsIgnoreCase(IHBLOCKID)) {
                     var strBuffer = "\"" + blockID + "\"";
-                    csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
+                    stringBuilder.append(strBuffer);
+//                    csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
                 } else {
                     LOGGER.warn("Column {} not found on buffer, inserted empty value", columnFromSnowflakeTable);
                 }
 
                 if (i < columnsFromTable.size() - 1) {
-                    csvInMemory.writeBytes(",".getBytes());
+                    stringBuilder.append(",");
+//                    csvInMemory.writeBytes(",".getBytes());
                 }
             }
 
-            csvInMemory.writeBytes("\n".getBytes());
+            stringBuilder.append("\n");
+//            csvInMemory.writeBytes("\n".getBytes());
         }
 
+        if (!stringBuilder.isEmpty()) {
+            csvInMemory.write(stringBuilder.toString().getBytes(StandardCharsets.UTF_8));
+        }
         var endTime = System.currentTimeMillis();
         LOGGER.debug("Prepared csv in memory in {} ms", endTime - startTime);
         return csvInMemory;
