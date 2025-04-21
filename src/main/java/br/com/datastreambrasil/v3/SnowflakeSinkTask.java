@@ -92,7 +92,7 @@ public class SnowflakeSinkTask extends SinkTask {
             truncateBeforeBulk = config.getBoolean(SnowflakeSinkConnector.CFG_ALWAYS_TRUNCATE_BEFORE_BULK);
             truncateWhenNoDataAfterSeconds = config
                     .getInt(SnowflakeSinkConnector.CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS);
-            snapshotMode = config.getBoolean(SnowflakeSinkConnector.CFG_SNAPSHOT_MODE_DISABLE);
+            snapshotMode = !config.getBoolean(SnowflakeSinkConnector.CFG_SNAPSHOT_MODE_DISABLE);
 
             var disableCleanUpJob = config.getBoolean(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DISABLE);
             var intervalHoursCleanup = config.getInt(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
