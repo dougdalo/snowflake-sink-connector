@@ -5,6 +5,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -65,6 +66,8 @@ public class SnowflakeSinkTask extends SinkTask {
     // quartz constants
     protected static final String KEY_SNOWFLAKE_CONNECTION = "snowflakeConnection";
 
+    private List<String> columnsFinalTable = new ArrayList<>();
+
     @Override
     public String version() {
         return SnowflakeSinkConnector.VERSION;
@@ -105,6 +108,9 @@ public class SnowflakeSinkTask extends SinkTask {
             properties.put("password", map.get(SnowflakeSinkConnector.CFG_PASSWORD));
             connection = DriverManager.getConnection(map.get(SnowflakeSinkConnector.CFG_URL), properties);
             snowflakeConnection = connection.unwrap(SnowflakeConnection.class);
+
+            //fill columns
+            columnsFinalTable = getColumnsFromMetadata(tableName);
 
             // job quartz config
             if (!disableCleanUpJob) {
@@ -231,7 +237,7 @@ public class SnowflakeSinkTask extends SinkTask {
                 }
             }
 
-            try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable();
+            try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable(columnsFinalTable);
                     var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())) {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
@@ -280,21 +286,7 @@ public class SnowflakeSinkTask extends SinkTask {
         }
     }
 
-    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable() throws Throwable {
-        var metadata = connection.getMetaData();
-
-        var columnsFromTable = new ArrayList<String>();
-        try (var rsColumns = metadata.getColumns(null, schemaName.toUpperCase(), tableName.toUpperCase(), null)) {
-            while (rsColumns.next()) {
-                columnsFromTable.add(rsColumns.getString("COLUMN_NAME").toUpperCase());
-            }
-        }
-        if (columnsFromTable.isEmpty()) {
-            throw new RuntimeException(
-                    "Empty columns returned from target table " + tableName + ", schema " + schemaName);
-        }
-
-        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
+    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(List<String> columnsFromTable) {
 
         var csvInMemory = new ByteArrayOutputStream();
 
@@ -338,5 +330,24 @@ public class SnowflakeSinkTask extends SinkTask {
         }
 
         return false;
+    }
+
+    private List<String> getColumnsFromMetadata(String table) throws SQLException {
+        var metadata = connection.getMetaData();
+
+        var columnsFromTable = new ArrayList<String>();
+        try (var rsColumns = metadata.getColumns(null, schemaName.toUpperCase(), table.toUpperCase(), null)) {
+            while (rsColumns.next()) {
+                columnsFromTable.add(rsColumns.getString("COLUMN_NAME").toUpperCase());
+            }
+        }
+        if (columnsFromTable.isEmpty()) {
+            throw new RuntimeException(
+                    "Empty columns returned from target table " + table + ", schema " + schemaName);
+        }
+
+        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
+
+        return columnsFromTable;
     }
 }
