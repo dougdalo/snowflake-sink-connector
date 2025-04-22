@@ -94,7 +94,7 @@ public class SnowflakeSinkTask extends SinkTask {
                     .getInt(SnowflakeSinkConnector.CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS);
             snapshotMode = !config.getBoolean(SnowflakeSinkConnector.CFG_SNAPSHOT_MODE_DISABLE);
 
-            var disableCleanUpJob = config.getBoolean(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DISABLE);
+            var disableCleanUpJob = config.getBoolean(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DISABLE) || truncateBeforeBulk;
             var intervalHoursCleanup = config.getInt(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
 
             if (map.containsKey(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS)) {
@@ -226,7 +226,7 @@ public class SnowflakeSinkTask extends SinkTask {
     @Override
     public void flush(Map<TopicPartition, OffsetAndMetadata> currentOffsets) {
 
-        var useSnapshot = snapshotRecords && snapshotMode;
+        var useSnapshot = (snapshotRecords && snapshotMode) || truncateBeforeBulk;
 
         var startTime = System.currentTimeMillis();
         if (buffer.isEmpty()) {
