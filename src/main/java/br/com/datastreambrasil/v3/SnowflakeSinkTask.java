@@ -70,8 +70,8 @@ public class SnowflakeSinkTask extends SinkTask {
     protected static final String KEY_SNOWFLAKE_CONNECTION = "snowflakeConnection";
     protected static final String KEY_SNOWFLAKE_INGEST_TABLE_NAME = "snowflakeIngestTableName";
 
-    private List<String> columnsFinalTable = new ArrayList<>();
-    private List<String> columnsIngestTable = new ArrayList<>();
+    private Set<String> columnsFinalTable = new HashSet<>();
+    private Set<String> columnsIngestTable = new HashSet<>();
 
     @Override
     public String version() {
@@ -118,7 +118,9 @@ public class SnowflakeSinkTask extends SinkTask {
 
             //fill columns
             columnsFinalTable = getColumnsFromMetadata(tableName);
-            columnsIngestTable = getColumnsFromMetadata(ingestTableName);
+            if (!truncateBeforeBulk) {
+                columnsIngestTable = getColumnsFromMetadata(ingestTableName);
+            }
 
             // job quartz config
             if (!disableCleanUpJob) {
@@ -320,10 +322,10 @@ public class SnowflakeSinkTask extends SinkTask {
         }
     }
 
-    private List<String> getColumnsFromMetadata(String table) throws SQLException {
+    private Set<String> getColumnsFromMetadata(String table) throws SQLException {
         var metadata = connection.getMetaData();
 
-        var columnsFromTable = new ArrayList<String>();
+        var columnsFromTable = new HashSet<String>();
         try (var rsColumns = metadata.getColumns(null, schemaName.toUpperCase(), table.toUpperCase(), null)) {
             while (rsColumns.next()) {
                 columnsFromTable.add(rsColumns.getString("COLUMN_NAME").toUpperCase());
@@ -335,6 +337,7 @@ public class SnowflakeSinkTask extends SinkTask {
         }
 
         LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
+
 
         return columnsFromTable;
     }
@@ -367,15 +370,16 @@ public class SnowflakeSinkTask extends SinkTask {
         }
     }
 
-    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(String blockID, List<String> columnsFromTable) throws Throwable {
+    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(String blockID, Set<String> columnsFromTable) throws Throwable {
 
         var startTime = System.currentTimeMillis();
         var csvInMemory = new ByteArrayOutputStream();
         var stringBuilder = new StringBuilder();
 
         for (var recordInBuffer : buffer) {
-            for (int i = 0; i < columnsFromTable.size(); i++) {
-                var columnFromSnowflakeTable = columnsFromTable.get(i);
+
+            var count = 0;
+            for (String columnFromSnowflakeTable : columnsFromTable) {
                 if (recordInBuffer.containsKey(columnFromSnowflakeTable)) {
                     var valueFromRecord = recordInBuffer.get(columnFromSnowflakeTable);
 
@@ -389,24 +393,23 @@ public class SnowflakeSinkTask extends SinkTask {
                     if (valueFromRecord != null) {
                         var strBuffer = "\"" + valueFromRecord + "\"";
                         stringBuilder.append(strBuffer);
-//                        csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
                     }
                 } else if (columnFromSnowflakeTable.equalsIgnoreCase(IHBLOCKID)) {
                     var strBuffer = "\"" + blockID + "\"";
                     stringBuilder.append(strBuffer);
-//                    csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
                 } else {
                     LOGGER.warn("Column {} not found on buffer, inserted empty value", columnFromSnowflakeTable);
                 }
 
-                if (i < columnsFromTable.size() - 1) {
+                if (count < columnsFromTable.size() - 1) {
                     stringBuilder.append(",");
-//                    csvInMemory.writeBytes(",".getBytes());
                 }
+
+                count++;
             }
 
+
             stringBuilder.append("\n");
-//            csvInMemory.writeBytes("\n".getBytes());
         }
 
         if (!stringBuilder.isEmpty()) {
