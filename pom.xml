@@ -10,7 +10,7 @@
 		snowflake-sink-connector
 	</artifactId>
 	<version>
-		3.0.22
+		3.0.23
 	</version>
 	<properties>
 		<maven.compiler.source>

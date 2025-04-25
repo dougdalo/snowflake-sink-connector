@@ -70,8 +70,8 @@ public class SnowflakeSinkTask extends SinkTask {
     protected static final String KEY_SNOWFLAKE_CONNECTION = "snowflakeConnection";
     protected static final String KEY_SNOWFLAKE_INGEST_TABLE_NAME = "snowflakeIngestTableName";
 
-    private Set<String> columnsFinalTable = new HashSet<>();
-    private Set<String> columnsIngestTable = new HashSet<>();
+    private List<String> columnsFinalTable = new ArrayList<>();
+    private List<String> columnsIngestTable = new ArrayList<>();
 
     @Override
     public String version() {
@@ -333,10 +333,10 @@ public class SnowflakeSinkTask extends SinkTask {
         }
     }
 
-    private Set<String> getColumnsFromMetadata(String table) throws SQLException {
+    private List<String> getColumnsFromMetadata(String table) throws SQLException {
         var metadata = connection.getMetaData();
 
-        var columnsFromTable = new HashSet<String>();
+        var columnsFromTable = new ArrayList<String>();
         try (var rsColumns = metadata.getColumns(null, schemaName.toUpperCase(), table.toUpperCase(), null)) {
             while (rsColumns.next()) {
                 columnsFromTable.add(rsColumns.getString("COLUMN_NAME").toUpperCase());
@@ -347,10 +347,13 @@ public class SnowflakeSinkTask extends SinkTask {
                     "Empty columns returned from target table " + table + ", schema " + schemaName);
         }
 
-        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
+        //remove duplicated
+        var columnsNoDuplicate = columnsFromTable.stream().distinct().toList();
+
+        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsNoDuplicate));
 
 
-        return columnsFromTable;
+        return columnsNoDuplicate;
     }
 
     private String buildExcludeColumns() {
@@ -381,7 +384,7 @@ public class SnowflakeSinkTask extends SinkTask {
         }
     }
 
-    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(String blockID, Set<String> columnsFromTable) throws Throwable {
+    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(String blockID, List<String> columnsFromTable) throws Throwable {
 
         var startTime = System.currentTimeMillis();
         var csvInMemory = new ByteArrayOutputStream();
