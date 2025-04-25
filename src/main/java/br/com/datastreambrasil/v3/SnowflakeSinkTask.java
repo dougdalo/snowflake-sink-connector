@@ -40,7 +40,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final List<String> pks = new ArrayList<>();
-    private final Collection<Map<String, Object>> buffer = new ArrayList<>();
+    private final Map<String,Map<String, Object>> buffer = new HashMap<>();
     private static final String AFTER = "after";
     private static final String BEFORE = "before";
     private static final String OP = "op";
@@ -194,7 +194,7 @@ public class SnowflakeSinkTask extends SinkTask {
         mapCaseInsensitive.put(IHOP, debeziumOperation.c.toString());
         mapCaseInsensitive.put(IHDATETIME, LocalDateTime.now(ZoneOffset.UTC));
 
-        buffer.add(mapCaseInsensitive);
+        buffer.put(extractPK(mapCaseInsensitive), mapCaseInsensitive);
     }
 
     private void addRecordUsingCDCFormat(Map<String, Object> mapValue, SinkRecord record) {
@@ -222,7 +222,18 @@ public class SnowflakeSinkTask extends SinkTask {
         var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         mapCaseInsensitive.putAll(mapPayloadAfterBefore);
 
-        buffer.add(mapCaseInsensitive);
+        buffer.put(extractPK(mapCaseInsensitive), mapCaseInsensitive);
+    }
+
+    private String extractPK(Map<String, Object> mapCaseInsensitive) {
+        var buildPK = new StringBuilder();
+        for (String pk : pks) {
+            if (mapCaseInsensitive.containsKey(pk)) {
+                buildPK.append(pk).append(":").append(mapCaseInsensitive.get(pk).toString()).append(",");
+            }
+        }
+
+        return buildPK.toString();
     }
 
     @Override
@@ -376,7 +387,7 @@ public class SnowflakeSinkTask extends SinkTask {
         var csvInMemory = new ByteArrayOutputStream();
         var stringBuilder = new StringBuilder();
 
-        for (var recordInBuffer : buffer) {
+        for (var recordInBuffer : buffer.values()) {
 
             var count = 0;
             for (String columnFromSnowflakeTable : columnsFromTable) {
