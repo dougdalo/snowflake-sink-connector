@@ -300,17 +300,26 @@ public class SnowflakeSinkTask extends SinkTask {
 
                         //delete from final table
                         String deleteFromFinalTable = String.format(
-                                "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE %s = '%s') AS ingest WHERE %s",
+                                "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE %s = '%s' and op = 'd') AS ingest WHERE %s",
                                 tableName, String.join(",", pks), ingestTableName, IHBLOCKID, blockID,
-                                buildPkWhereClause(pks, "final", "ingest"));
+                                buildPkWhereClause(pks));
                         LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
                         stmt.executeUpdate(deleteFromFinalTable);
 
                         //insert in final table
                         String insertIntoFinalTable = String.format(
-                                "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE %s = '%s' and %s != '%s'", tableName, buildExcludeColumns(), ingestTableName, IHBLOCKID, blockID, IHOP, debeziumOperation.d);
+                                "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE %s = '%s' and op = 'c'",
+                                tableName, buildExcludeColumns(), ingestTableName, IHBLOCKID, blockID);
                         LOGGER.debug("Inserting statement to final table: {}", insertIntoFinalTable);
                         stmt.executeUpdate(insertIntoFinalTable);
+
+                        //update in final table
+                        String updateFinalTable = String.format(
+                                "UPDATE %s as final SET %s FROM (SELECT * EXCLUDE (%s) FROM %s WHERE %s = '%s' and op = 'u') AS ingest WHERE %s",
+                                tableName, buildUpdateColumns(), buildExcludeColumns(), ingestTableName, IHBLOCKID, blockID,
+                                buildPkWhereClause(pks));
+                        LOGGER.debug("Updating statement to final table: {}", updateFinalTable);
+                        stmt.executeUpdate(updateFinalTable);
                     }
                     var endTimeStatement = System.currentTimeMillis();
                     LOGGER.debug("Executed statement in {} ms", endTimeStatement - startTimeStatement);
@@ -331,6 +340,16 @@ public class SnowflakeSinkTask extends SinkTask {
             buffer.clear();
             lastFlush = LocalDateTime.now();
         }
+    }
+
+    private String buildUpdateColumns() {
+        var columns = new ArrayList<String>();
+        for (String column : columnsFinalTable) {
+            if (!pks.contains(column)) {
+                columns.add(String.format("final.%s = ingest.%s", column, column));
+            }
+        }
+        return String.join(",", columns);
     }
 
     private List<String> getColumnsFromMetadata(String table) throws SQLException {
@@ -360,9 +379,9 @@ public class SnowflakeSinkTask extends SinkTask {
         return String.join(",", IHPARTITION, IHDATETIME, IHBLOCKID, IHOFFSET, IHOP, IHTOPIC);
     }
 
-    private String buildPkWhereClause(List<String> pks, String aliasFinal, String aliasIngest) {
+    private String buildPkWhereClause(List<String> pks) {
         return pks.stream()
-                .map(col -> String.format("%s.%s = %s.%s", aliasFinal, col, aliasIngest, col))
+                .map(col -> String.format("%s.%s = %s.%s", "final", col, "ingest", col))
                 .reduce((a, b) -> a + " and " + b).orElseThrow();
     }
 
