@@ -4,6 +4,7 @@ import net.snowflake.client.jdbc.SnowflakeConnection;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.AbstractConfig;
+import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
 import org.quartz.*;
@@ -37,6 +38,9 @@ public class SnowflakeSinkTask extends SinkTask {
     private boolean truncateBeforeBulk;
     private int truncateWhenNoDataAfterSeconds;
     private LocalDateTime lastFlush = LocalDateTime.now();
+    private boolean flushHasDeletedRecords;
+    private boolean flushHasInsertedRecords;
+    private boolean flushHasUpdatedRecords;
 
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final List<String> pks = new ArrayList<>();
@@ -306,27 +310,33 @@ public class SnowflakeSinkTask extends SinkTask {
                         stmt.executeUpdate(copyInto);
 
                         //delete from final table
-                        String deleteFromFinalTable = String.format(
-                                "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE %s = '%s' and op = 'd') AS ingest WHERE %s",
-                                tableName, String.join(",", pks), ingestTableName, IHBLOCKID, blockID,
-                                buildPkWhereClause(pks));
-                        LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
-                        stmt.executeUpdate(deleteFromFinalTable);
+                        if (flushHasDeletedRecords) {
+                            String deleteFromFinalTable = String.format(
+                                    "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE ih_blockid = '%s' and ih_op = 'd') AS ingest WHERE %s",
+                                    tableName, String.join(",", pks), ingestTableName, blockID,
+                                    buildPkWhereClause(pks));
+                            LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
+                            stmt.executeUpdate(deleteFromFinalTable);
+                        }
 
-                        //insert in final table
-                        String insertIntoFinalTable = String.format(
-                                "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE %s = '%s' and op = 'c'",
-                                tableName, buildExcludeColumns(), ingestTableName, IHBLOCKID, blockID);
-                        LOGGER.debug("Inserting statement to final table: {}", insertIntoFinalTable);
-                        stmt.executeUpdate(insertIntoFinalTable);
+                        if (flushHasInsertedRecords) {
+                            //insert in final table
+                            String insertIntoFinalTable = String.format(
+                                    "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'c'",
+                                    tableName, buildExcludeColumns(), ingestTableName, blockID);
+                            LOGGER.debug("Inserting statement to final table: {}", insertIntoFinalTable);
+                            stmt.executeUpdate(insertIntoFinalTable);
+                        }
 
-                        //update in final table
-                        String updateFinalTable = String.format(
-                                "UPDATE %s as final SET %s FROM (SELECT * EXCLUDE (%s) FROM %s WHERE %s = '%s' and op = 'u') AS ingest WHERE %s",
-                                tableName, buildUpdateColumns(), buildExcludeColumns(), ingestTableName, IHBLOCKID, blockID,
-                                buildPkWhereClause(pks));
-                        LOGGER.debug("Updating statement to final table: {}", updateFinalTable);
-                        stmt.executeUpdate(updateFinalTable);
+                        if (flushHasUpdatedRecords) {
+                            //update in final table
+                            String updateFinalTable = String.format(
+                                    "UPDATE %s as final SET %s FROM (SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'u') AS ingest WHERE %s",
+                                    tableName, buildUpdateColumns(), buildExcludeColumns(), ingestTableName, blockID,
+                                    buildPkWhereClause(pks));
+                            LOGGER.debug("Updating statement to final table: {}", updateFinalTable);
+                            stmt.executeUpdate(updateFinalTable);
+                        }
                     }
                     var endTimeStatement = System.currentTimeMillis();
                     LOGGER.debug("Executed statement in {} ms", endTimeStatement - startTimeStatement);
@@ -417,9 +427,26 @@ public class SnowflakeSinkTask extends SinkTask {
         var csvInMemory = new ByteArrayOutputStream();
         var stringBuilder = new StringBuilder();
 
-        for (var recordInBuffer : buffer.values()) {
+        flushHasDeletedRecords = false;
+        flushHasUpdatedRecords = false;
+        flushHasInsertedRecords = false;
 
+        for (var recordInBuffer : buffer.values()) {
             var count = 0;
+            var op = recordInBuffer.get(IHOP).toString();
+
+            if (!flushHasDeletedRecords && debeziumOperation.d.toString().equalsIgnoreCase(op)){
+                flushHasDeletedRecords = true;
+            }
+
+            if (!flushHasInsertedRecords && debeziumOperation.c.toString().equalsIgnoreCase(op)){
+                flushHasInsertedRecords = true;
+            }
+
+            if (!flushHasUpdatedRecords && debeziumOperation.u.toString().equalsIgnoreCase(op)){
+                flushHasUpdatedRecords = true;
+            }
+
             for (String columnFromSnowflakeTable : columnsFromTable) {
                 if (recordInBuffer.containsKey(columnFromSnowflakeTable)) {
                     var valueFromRecord = recordInBuffer.get(columnFromSnowflakeTable);
