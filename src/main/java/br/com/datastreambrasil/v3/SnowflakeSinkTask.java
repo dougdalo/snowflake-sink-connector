@@ -292,7 +292,7 @@ public class SnowflakeSinkTask extends SinkTask {
                     if (useSnapshot){
 
                         //copy everything to ingest
-                        String copyInto = String.format("COPY INTO %s(%s) FROM @%s/%s.gz PURGE = TRUE", tableName, columnsFromMetadata,
+                        String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", tableName, columnsFromMetadata,
                                 stageName, destFileName);
                         LOGGER.debug("Copying statement to final table: {}", copyInto);
                         stmt.executeUpdate(copyInto);
@@ -300,7 +300,7 @@ public class SnowflakeSinkTask extends SinkTask {
                     }else{
 
                         //copy everything to ingest
-                        String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", ingestTableName, columnsFromMetadata,
+                        String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", ingestTableName, columnsFromMetadata,
                                 stageName, destFileName);
                         LOGGER.debug("Copying statement to ingest table: {}", copyInto);
                         stmt.executeUpdate(copyInto);
