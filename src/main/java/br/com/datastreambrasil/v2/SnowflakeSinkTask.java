@@ -51,6 +51,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final List<String> pks = new ArrayList<>();
+    private final List<String> ignoreColumns = new ArrayList<>();
     private final Collection<Map<String, Object>> buffer = new ArrayList<>();
     private static final String PAYLOAD = "payload";
     private static final String AFTER = "after";
@@ -99,6 +100,12 @@ public class SnowflakeSinkTask extends SinkTask {
             if (map.containsKey(SnowflakeSinkConnector.CFG_PK)) {
                 pks.addAll(
                         Arrays.stream(map.get(SnowflakeSinkConnector.CFG_PK).split(","))
+                                .toList());
+            }
+
+            if (map.containsKey(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS)) {
+                ignoreColumns.addAll(
+                        Arrays.stream(map.get(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS).split(","))
                                 .toList());
             }
 
@@ -242,8 +249,8 @@ public class SnowflakeSinkTask extends SinkTask {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
-                    String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName,
-                            destFileName);
+                    String copyInto = String.format("COPY INTO %s(%s) FROM @%s/%s.gz PURGE = TRUE", tableName, columnsFinalTable,
+                            stageName, destFileName);
                     LOGGER.debug("Copying statement: {}", copyInto);
                     stmt.executeUpdate(copyInto);
                 }
@@ -345,6 +352,8 @@ public class SnowflakeSinkTask extends SinkTask {
             throw new RuntimeException(
                     "Empty columns returned from target table " + table + ", schema " + schemaName);
         }
+
+        columnsFromTable.removeAll(ignoreColumns);
 
         LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
 

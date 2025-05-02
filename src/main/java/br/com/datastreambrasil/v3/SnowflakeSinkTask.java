@@ -40,6 +40,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final List<String> pks = new ArrayList<>();
+    private final List<String> ignoreColumns = new ArrayList<>();
     private final Map<String,Map<String, Object>> buffer = new HashMap<>();
     private static final String AFTER = "after";
     private static final String BEFORE = "before";
@@ -106,6 +107,12 @@ public class SnowflakeSinkTask extends SinkTask {
             if (map.containsKey(SnowflakeSinkConnector.CFG_PK)) {
                 pks.addAll(
                         Arrays.stream(map.get(SnowflakeSinkConnector.CFG_PK).split(","))
+                                .toList());
+            }
+
+            if (map.containsKey(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS)) {
+                ignoreColumns.addAll(
+                        Arrays.stream(map.get(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS).split(","))
                                 .toList());
             }
 
@@ -285,16 +292,16 @@ public class SnowflakeSinkTask extends SinkTask {
                     if (useSnapshot){
 
                         //copy everything to ingest
-                        String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", tableName, stageName,
-                                destFileName);
+                        String copyInto = String.format("COPY INTO %s(%s) FROM @%s/%s.gz PURGE = TRUE", tableName, columnsFromMetadata,
+                                stageName, destFileName);
                         LOGGER.debug("Copying statement to final table: {}", copyInto);
                         stmt.executeUpdate(copyInto);
 
                     }else{
 
                         //copy everything to ingest
-                        String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", ingestTableName, stageName,
-                                destFileName);
+                        String copyInto = String.format("COPY INTO %s FROM @%s/%s.gz PURGE = TRUE", ingestTableName, columnsFromMetadata,
+                                stageName, destFileName);
                         LOGGER.debug("Copying statement to ingest table: {}", copyInto);
                         stmt.executeUpdate(copyInto);
 
@@ -366,6 +373,7 @@ public class SnowflakeSinkTask extends SinkTask {
                     "Empty columns returned from target table " + table + ", schema " + schemaName);
         }
 
+        columnsFromTable.removeAll(ignoreColumns);
         //remove duplicated
         var columnsNoDuplicate = columnsFromTable.stream().distinct().toList();
 

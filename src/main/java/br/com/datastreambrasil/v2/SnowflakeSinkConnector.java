@@ -21,6 +21,7 @@ public class SnowflakeSinkConnector extends SinkConnector {
         protected static final String CFG_JOB_CLEANUP_HOURS = "job_cleanup_hours";
         protected static final String CFG_JOB_CLEANUP_DISABLE = "job_cleanup_disable";
         protected static final String CFG_PAYLOAD_CDC_FORMAT = "payload_cdc_format";
+        protected static final String CFG_IGNORE_COLUMNS = "ignore_columns";
 
         /*
          * For some use cases we need to load all data again, each time. So we have two
@@ -47,6 +48,8 @@ public class SnowflakeSinkConnector extends SinkConnector {
                         .define(CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS, ConfigDef.Type.LIST, null,
                                         ConfigDef.Importance.MEDIUM,
                                         "List of timestamp fields we should convert to seconds")
+                        .define(CFG_IGNORE_COLUMNS, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
+                                        "List of columns to ignore")
                         .define(CFG_PK, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
                                         "List of primary keys to be used")
                         .define(CFG_JOB_CLEANUP_HOURS, ConfigDef.Type.INT, 4, ConfigDef.Importance.MEDIUM,
