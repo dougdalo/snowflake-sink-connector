@@ -249,7 +249,7 @@ public class SnowflakeSinkTask extends SinkTask {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
-                    String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", tableName, columnsFinalTable,
+                    String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", tableName, String.join(",", columnsFinalTable),
                             stageName, destFileName);
                     LOGGER.debug("Copying statement: {}", copyInto);
                     stmt.executeUpdate(copyInto);
