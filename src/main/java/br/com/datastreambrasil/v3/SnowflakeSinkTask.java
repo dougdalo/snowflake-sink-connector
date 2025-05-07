@@ -10,7 +10,9 @@ import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import redis.clients.jedis.JedisPooled;
 import redis.clients.jedis.UnifiedJedis;
+import redis.clients.jedis.params.SetParams;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -79,7 +81,7 @@ public class SnowflakeSinkTask extends SinkTask {
     private List<String> columnsIngestTable = new ArrayList<>();
 
     //redis
-    private UnifiedJedis jedis;
+    private JedisPooled jedis;
     private String redisKeyDmlOperation;
     private int redisKeyTtlSeconds;
 
@@ -125,8 +127,8 @@ public class SnowflakeSinkTask extends SinkTask {
                                 .toList());
             }
 
-            if (map.containsKey(SnowflakeSinkConnector.CFG_REDIS_CONNECTION_URL)){
-                jedis = new UnifiedJedis(config.getString(SnowflakeSinkConnector.CFG_REDIS_CONNECTION_URL));
+            if (map.containsKey(SnowflakeSinkConnector.CFG_REDIS_HOST)){
+                jedis = new JedisPooled(config.getString(SnowflakeSinkConnector.CFG_REDIS_HOST), config.getInt(SnowflakeSinkConnector.CFG_REDIS_PORT));
                 redisKeyDmlOperation = "snowflake_sink_connector_dml_" + map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME) + "_" + map.get(SnowflakeSinkConnector.CFG_TABLE_NAME) + "_LOCK";
                 redisKeyTtlSeconds = config.getInt(SnowflakeSinkConnector.CFG_REDIS_KEY_TTL_SECONDS);
             }
@@ -377,22 +379,29 @@ public class SnowflakeSinkTask extends SinkTask {
 
     private void waitForRedisLock() {
         if (jedis != null) {
-            var lockStatus = jedis.setex(redisKeyDmlOperation.getBytes(), redisKeyTtlSeconds, "1".getBytes());
+            var lockStatus = jedis.set(redisKeyDmlOperation, "1", new SetParams().nx().ex(redisKeyTtlSeconds));
             if (!"OK".equalsIgnoreCase(lockStatus)) {
                 LOGGER.warn("Lock on redis key {} not acquired, since status is {} and we expect OK. Likely other task is using it. Will try again in some seconds ...", redisKeyDmlOperation, lockStatus);
                 try {
-                    Thread.sleep(10000);
+                    Thread.sleep(3000);
                 } catch (InterruptedException e) {
                     LOGGER.error("Error while sleeping for redis lock", e);
                     throw new RuntimeException("Error while sleeping for redis lock", e);
                 }
+            }else{
+                LOGGER.debug("Redis lock acquired on key {}", redisKeyDmlOperation);
             }
+        }else {
+            LOGGER.debug("Jedis is not configured, so we will not use redis lock");
         }
     }
 
     private void releaseRedisLock() {
         if (jedis != null) {
             jedis.del(redisKeyDmlOperation.getBytes());
+            LOGGER.debug("Redis lock released on key {}", redisKeyDmlOperation);
+        }else{
+            LOGGER.debug("Jedis is not configured, so we can't release lock");
         }
     }
 
