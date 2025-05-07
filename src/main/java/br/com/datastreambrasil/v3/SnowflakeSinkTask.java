@@ -4,13 +4,13 @@ import net.snowflake.client.jdbc.SnowflakeConnection;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.AbstractConfig;
-import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
 import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import redis.clients.jedis.UnifiedJedis;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -78,6 +78,11 @@ public class SnowflakeSinkTask extends SinkTask {
     private List<String> columnsFinalTable = new ArrayList<>();
     private List<String> columnsIngestTable = new ArrayList<>();
 
+    //redis
+    private UnifiedJedis jedis;
+    private String redisKeyDmlOperation;
+    private int redisKeyTtlSeconds;
+
     @Override
     public String version() {
         return SnowflakeSinkConnector.VERSION;
@@ -118,6 +123,12 @@ public class SnowflakeSinkTask extends SinkTask {
                 ignoreColumns.addAll(
                         Arrays.stream(map.get(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS).split(","))
                                 .toList());
+            }
+
+            if (map.containsKey(SnowflakeSinkConnector.CFG_REDIS_CONNECTION_URL)){
+                jedis = new UnifiedJedis(config.getString(SnowflakeSinkConnector.CFG_REDIS_CONNECTION_URL));
+                redisKeyDmlOperation = "snowflake_sink_connector_dml_" + map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME) + "_" + map.get(SnowflakeSinkConnector.CFG_TABLE_NAME) + "_LOCK";
+                redisKeyTtlSeconds = config.getInt(SnowflakeSinkConnector.CFG_REDIS_KEY_TTL_SECONDS);
             }
 
             // init connection
@@ -309,15 +320,6 @@ public class SnowflakeSinkTask extends SinkTask {
                         LOGGER.debug("Copying statement to ingest table: {}", copyInto);
                         stmt.executeUpdate(copyInto);
 
-                        //delete from final table
-                        if (flushHasDeletedRecords) {
-                            String deleteFromFinalTable = String.format(
-                                    "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE ih_blockid = '%s' and ih_op = 'd') AS ingest WHERE %s",
-                                    tableName, String.join(",", pks), ingestTableName, blockID,
-                                    buildPkWhereClause(pks));
-                            LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
-                            stmt.executeUpdate(deleteFromFinalTable);
-                        }
 
                         if (flushHasInsertedRecords) {
                             //insert in final table
@@ -328,14 +330,28 @@ public class SnowflakeSinkTask extends SinkTask {
                             stmt.executeUpdate(insertIntoFinalTable);
                         }
 
+                        //delete from final table
+                        if (flushHasDeletedRecords) {
+                            waitForRedisLock();
+                            String deleteFromFinalTable = String.format(
+                                    "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE ih_blockid = '%s' and ih_op = 'd') AS ingest WHERE %s",
+                                    tableName, String.join(",", pks), ingestTableName, blockID,
+                                    buildPkWhereClause(pks));
+                            LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
+                            stmt.executeUpdate(deleteFromFinalTable);
+                            releaseRedisLock();
+                        }
+
                         if (flushHasUpdatedRecords) {
                             //update in final table
+                            waitForRedisLock();
                             String updateFinalTable = String.format(
                                     "UPDATE %s as final SET %s FROM (SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'u') AS ingest WHERE %s",
                                     tableName, buildUpdateColumns(), buildExcludeColumns(), ingestTableName, blockID,
                                     buildPkWhereClause(pks));
                             LOGGER.debug("Updating statement to final table: {}", updateFinalTable);
                             stmt.executeUpdate(updateFinalTable);
+                            releaseRedisLock();
                         }
                     }
                     var endTimeStatement = System.currentTimeMillis();
@@ -356,6 +372,27 @@ public class SnowflakeSinkTask extends SinkTask {
             LOGGER.debug("Flushed {} records in {} ms", buffer.size(), endTime - startTime);
             buffer.clear();
             lastFlush = LocalDateTime.now();
+        }
+    }
+
+    private void waitForRedisLock() {
+        if (jedis != null) {
+            var lockStatus = jedis.setex(redisKeyDmlOperation.getBytes(), redisKeyTtlSeconds, "1".getBytes());
+            if (!"OK".equalsIgnoreCase(lockStatus)) {
+                LOGGER.warn("Lock on redis key {} not acquired, since status is {} and we expect OK. Likely other task is using it. Will try again in some seconds ...", redisKeyDmlOperation, lockStatus);
+                try {
+                    Thread.sleep(10000);
+                } catch (InterruptedException e) {
+                    LOGGER.error("Error while sleeping for redis lock", e);
+                    throw new RuntimeException("Error while sleeping for redis lock", e);
+                }
+            }
+        }
+    }
+
+    private void releaseRedisLock() {
+        if (jedis != null) {
+            jedis.del(redisKeyDmlOperation.getBytes());
         }
     }
 
@@ -411,6 +448,10 @@ public class SnowflakeSinkTask extends SinkTask {
             } catch (SchedulerException e) {
                 LOGGER.error("Can not shutdown quartz scheduler", e);
             }
+        }
+
+        if (jedis != null) {
+            jedis.close();
         }
     }
 

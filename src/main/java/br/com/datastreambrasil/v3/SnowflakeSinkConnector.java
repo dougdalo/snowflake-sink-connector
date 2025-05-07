@@ -24,6 +24,8 @@ public class SnowflakeSinkConnector extends SinkConnector {
         protected static final String CFG_PAYLOAD_CDC_FORMAT = "payload_cdc_format";
         protected static final String CFG_SNAPSHOT_MODE_DISABLE = "snapshot_mode_disable";
         protected static final String CFG_IGNORE_COLUMNS = "ignore_columns";
+        protected static final String CFG_REDIS_CONNECTION_URL = "redis_connection_url";
+        protected static final String CFG_REDIS_KEY_TTL_SECONDS = "redis_key_ttl_seconds";
 
         /*
          * For some use cases we need to load all data again, each time. So we have two
@@ -67,6 +69,10 @@ public class SnowflakeSinkConnector extends SinkConnector {
                                         "If true, we will truncate the table before copying it to snowflake")
                         .define(CFG_SNAPSHOT_MODE_DISABLE, ConfigDef.Type.BOOLEAN, false, ConfigDef.Importance.HIGH,
                                 "If true, we will not use snapshot mode")
+                        .define(CFG_REDIS_CONNECTION_URL, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
+                        "redis connection url, example: redis://localhost:6379. If not set, we will not use redis, what is dangerous because can cause lock on snowflake")
+                .define(CFG_REDIS_KEY_TTL_SECONDS, ConfigDef.Type.INT, 120, ConfigDef.Importance.HIGH,
+                        "redis key ttl in seconds.")
                         .define(CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS, ConfigDef.Type.INT, 1800,
                                         ConfigDef.Importance.HIGH,
                                         "If we don't receive any event for this amount of time, we will truncate the table in snowflake");
