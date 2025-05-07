@@ -47,7 +47,7 @@ public class SnowflakeSinkTask extends SinkTask {
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final List<String> pks = new ArrayList<>();
     private final List<String> ignoreColumns = new ArrayList<>();
-    private final Map<String,Map<String, Object>> buffer = new HashMap<>();
+    private final Map<String, Map<String, Object>> buffer = new HashMap<>();
     private static final String AFTER = "after";
     private static final String BEFORE = "before";
     private static final String OP = "op";
@@ -67,9 +67,9 @@ public class SnowflakeSinkTask extends SinkTask {
     }
 
     /**
-    * This flag is enabled while we are receiving only 'r' operation, so we can copy straight to the target table, don't need
+     * This flag is enabled while we are receiving only 'r' operation, so we can copy straight to the target table, don't need
      * ingest table. But if we receive a operation different than 'r', we disable this mode.
-    * */
+     */
     private boolean snapshotRecords = true;
     private boolean snapshotMode = false;
 
@@ -127,7 +127,7 @@ public class SnowflakeSinkTask extends SinkTask {
                                 .toList());
             }
 
-            if (map.containsKey(SnowflakeSinkConnector.CFG_REDIS_HOST)){
+            if (map.containsKey(SnowflakeSinkConnector.CFG_REDIS_HOST)) {
                 jedis = new JedisPooled(config.getString(SnowflakeSinkConnector.CFG_REDIS_HOST), config.getInt(SnowflakeSinkConnector.CFG_REDIS_PORT));
                 redisKeyDmlOperation = "snowflake_sink_connector_dml_" + map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME) + "_" + map.get(SnowflakeSinkConnector.CFG_TABLE_NAME) + "_LOCK";
                 redisKeyTtlSeconds = config.getInt(SnowflakeSinkConnector.CFG_REDIS_KEY_TTL_SECONDS);
@@ -205,7 +205,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
     /**
      * Used when the data is ingested not from cdc but manually in the kafka, so we don't have the debezium format
-     * */
+     */
     private void addRecordUsingPlainFormat(Map<String, Object> mapValue, SinkRecord record) {
         snapshotRecords = false;
         var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
@@ -295,7 +295,7 @@ public class SnowflakeSinkTask extends SinkTask {
             var blockID = UUID.randomUUID().toString();
             var startTimeMain = System.currentTimeMillis();
             try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable(blockID, columnsFromMetadata);
-                    var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())) {
+                 var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())) {
 
                 var startTimeUpload = System.currentTimeMillis();
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
@@ -306,7 +306,7 @@ public class SnowflakeSinkTask extends SinkTask {
                 var startTimeStatement = System.currentTimeMillis();
                 try (var stmt = connection.createStatement()) {
 
-                    if (useSnapshot){
+                    if (useSnapshot) {
 
                         //copy everything to ingest
                         String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", tableName, String.join(",", columnsFromMetadata),
@@ -314,7 +314,7 @@ public class SnowflakeSinkTask extends SinkTask {
                         LOGGER.debug("Copying statement to final table: {}", copyInto);
                         stmt.executeUpdate(copyInto);
 
-                    }else{
+                    } else {
 
                         //copy everything to ingest
                         String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", ingestTableName, String.join(",", columnsFromMetadata),
@@ -360,7 +360,7 @@ public class SnowflakeSinkTask extends SinkTask {
                     LOGGER.debug("Executed statement in {} ms", endTimeStatement - startTimeStatement);
 
                 } catch (SQLException e) {
-                    throw new RuntimeException("Error executing operations",e);
+                    throw new RuntimeException("Error executing operations", e);
                 }
             }
             var endTimeMain = System.currentTimeMillis();
@@ -379,19 +379,20 @@ public class SnowflakeSinkTask extends SinkTask {
 
     private void waitForRedisLock() {
         if (jedis != null) {
-            var lockStatus = jedis.set(redisKeyDmlOperation, "1", new SetParams().nx().ex(redisKeyTtlSeconds));
-            if (!"OK".equalsIgnoreCase(lockStatus)) {
+            String lockStatus = null;
+            while (!"OK".equalsIgnoreCase(lockStatus)) {
+                lockStatus = jedis.set(redisKeyDmlOperation, "1", new SetParams().nx().ex(redisKeyTtlSeconds));
                 LOGGER.warn("Lock on redis key {} not acquired, since status is {} and we expect OK. Likely other task is using it. Will try again in some seconds ...", redisKeyDmlOperation, lockStatus);
                 try {
-                    Thread.sleep(3000);
+                    Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     LOGGER.error("Error while sleeping for redis lock", e);
                     throw new RuntimeException("Error while sleeping for redis lock", e);
                 }
-            }else{
-                LOGGER.debug("Redis lock acquired on key {}", redisKeyDmlOperation);
             }
-        }else {
+
+            LOGGER.debug("Redis lock acquired on key {}", redisKeyDmlOperation);
+        } else {
             LOGGER.debug("Jedis is not configured, so we will not use redis lock");
         }
     }
@@ -400,7 +401,7 @@ public class SnowflakeSinkTask extends SinkTask {
         if (jedis != null) {
             jedis.del(redisKeyDmlOperation.getBytes());
             LOGGER.debug("Redis lock released on key {}", redisKeyDmlOperation);
-        }else{
+        } else {
             LOGGER.debug("Jedis is not configured, so we can't release lock");
         }
     }
@@ -485,15 +486,15 @@ public class SnowflakeSinkTask extends SinkTask {
             var count = 0;
             var op = recordInBuffer.get(IHOP).toString();
 
-            if (!flushHasDeletedRecords && debeziumOperation.d.toString().equalsIgnoreCase(op)){
+            if (!flushHasDeletedRecords && debeziumOperation.d.toString().equalsIgnoreCase(op)) {
                 flushHasDeletedRecords = true;
             }
 
-            if (!flushHasInsertedRecords && debeziumOperation.c.toString().equalsIgnoreCase(op)){
+            if (!flushHasInsertedRecords && debeziumOperation.c.toString().equalsIgnoreCase(op)) {
                 flushHasInsertedRecords = true;
             }
 
-            if (!flushHasUpdatedRecords && debeziumOperation.u.toString().equalsIgnoreCase(op)){
+            if (!flushHasUpdatedRecords && debeziumOperation.u.toString().equalsIgnoreCase(op)) {
                 flushHasUpdatedRecords = true;
             }
 
