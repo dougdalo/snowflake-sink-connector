@@ -54,7 +54,7 @@ public class SnowflakeSinkConnector extends SinkConnector {
                     ConfigDef.Importance.MEDIUM,
                     "List of timestamp fields we should convert to seconds")
             .define(CFG_PK, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
-                    "List of primary keys to be used")
+                    "List of primary keys to be used.")
             .define(CFG_IGNORE_COLUMNS, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
                     "List of columns to ignore")
             .define(CFG_JOB_CLEANUP_HOURS, ConfigDef.Type.INT, 4, ConfigDef.Importance.MEDIUM,

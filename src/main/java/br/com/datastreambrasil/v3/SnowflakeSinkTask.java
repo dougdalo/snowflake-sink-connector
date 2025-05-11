@@ -11,7 +11,6 @@ import org.quartz.impl.StdSchedulerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.JedisPooled;
-import redis.clients.jedis.UnifiedJedis;
 import redis.clients.jedis.params.SetParams;
 
 import java.io.ByteArrayInputStream;
@@ -45,7 +44,7 @@ public class SnowflakeSinkTask extends SinkTask {
     private boolean flushHasUpdatedRecords;
 
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
-    private final List<String> pks = new ArrayList<>();
+    private List<String> pks = new ArrayList<>();
     private final List<String> ignoreColumns = new ArrayList<>();
     private final Map<String, Map<String, Object>> buffer = new HashMap<>();
     private static final String AFTER = "after";
@@ -84,6 +83,7 @@ public class SnowflakeSinkTask extends SinkTask {
     private JedisPooled jedis;
     private String redisKeyDmlOperation;
     private int redisKeyTtlSeconds;
+    private String redisKeyLastExecTruncate;
 
     @Override
     public String version() {
@@ -131,6 +131,7 @@ public class SnowflakeSinkTask extends SinkTask {
                 jedis = new JedisPooled(config.getString(SnowflakeSinkConnector.CFG_REDIS_HOST), config.getInt(SnowflakeSinkConnector.CFG_REDIS_PORT));
                 redisKeyDmlOperation = "snowflake_sink_connector_dml_" + map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME) + "_" + map.get(SnowflakeSinkConnector.CFG_TABLE_NAME) + "_LOCK";
                 redisKeyTtlSeconds = config.getInt(SnowflakeSinkConnector.CFG_REDIS_KEY_TTL_SECONDS);
+                redisKeyLastExecTruncate = "snowflake_sink_connector_last_truncate_" + map.get(SnowflakeSinkConnector.CFG_SCHEMA_NAME) + "_" + map.get(SnowflakeSinkConnector.CFG_TABLE_NAME);
             }
 
             // init connection
@@ -189,6 +190,8 @@ public class SnowflakeSinkTask extends SinkTask {
                     throw new RuntimeException("Null values for topic or kafkaPartition");
                 }
 
+                pks = extractPK(record);
+
                 var mapValue = (Map<String, Object>) record.value();
 
                 if (cdcFormat) {
@@ -218,7 +221,7 @@ public class SnowflakeSinkTask extends SinkTask {
         mapCaseInsensitive.put(IHOP, debeziumOperation.c.toString());
         mapCaseInsensitive.put(IHDATETIME, LocalDateTime.now(ZoneOffset.UTC));
 
-        buffer.put(extractPK(mapCaseInsensitive), mapCaseInsensitive);
+        buffer.put(convertPKToStringKey(mapCaseInsensitive), mapCaseInsensitive);
     }
 
     private void addRecordUsingCDCFormat(Map<String, Object> mapValue, SinkRecord record) {
@@ -246,10 +249,10 @@ public class SnowflakeSinkTask extends SinkTask {
         var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         mapCaseInsensitive.putAll(mapPayloadAfterBefore);
 
-        buffer.put(extractPK(mapCaseInsensitive), mapCaseInsensitive);
+        buffer.put(convertPKToStringKey(mapCaseInsensitive), mapCaseInsensitive);
     }
 
-    private String extractPK(Map<String, Object> mapCaseInsensitive) {
+    private String convertPKToStringKey(Map<String, Object> mapCaseInsensitive) {
         var buildPK = new StringBuilder();
         for (String pk : pks) {
             if (mapCaseInsensitive.containsKey(pk)) {
@@ -258,6 +261,15 @@ public class SnowflakeSinkTask extends SinkTask {
         }
 
         return buildPK.toString();
+    }
+
+    private List<String> extractPK(SinkRecord record) {
+        if (pks.isEmpty()) {
+            var mapKey = (Map<String, Object>) record.key();
+            return new ArrayList<>(mapKey.keySet());
+        }
+
+        return pks;
     }
 
     @Override
@@ -276,11 +288,10 @@ public class SnowflakeSinkTask extends SinkTask {
                     tableName);
 
             /*
-             * truncate if truncateBeforeFlush is true and last flush was more than 30
-             * minutes ago
+             * truncate if truncateBeforeFlush is true and last truncate was more than N minutes ago
              */
-            var minutesLastFlush = ChronoUnit.MINUTES.between(lastFlush, LocalDateTime.now());
-            if (truncateBeforeBulk && minutesLastFlush > (truncateWhenNoDataAfterSeconds / 60)) {
+            var minutesLastExecTruncate = ChronoUnit.MINUTES.between(getLastExecTruncate(), LocalDateTime.now());
+            if (truncateBeforeBulk && minutesLastExecTruncate > (truncateWhenNoDataAfterSeconds / 60)) {
                 try (var stmt = connection.createStatement()) {
                     String truncateTable = String.format("TRUNCATE TABLE %s", tableName);
                     LOGGER.debug("Truncating table: {}", truncateTable);
@@ -403,6 +414,20 @@ public class SnowflakeSinkTask extends SinkTask {
             LOGGER.debug("Redis lock released on key {}", redisKeyDmlOperation);
         } else {
             LOGGER.debug("Jedis is not configured, so we can't release lock");
+        }
+    }
+
+    private LocalDateTime getLastExecTruncate(){
+        if (jedis != null) {
+            var lastExecTruncate = jedis.get(redisKeyLastExecTruncate);
+            if (lastExecTruncate != null) {
+                return LocalDateTime.parse(lastExecTruncate);
+            }
+
+            return LocalDateTime.now().minusDays(1);
+        }else{
+            LOGGER.warn("Jedis is not configured, so we can't get last exec truncate. Will use last flush, what is dangerous to lost data");
+            return lastFlush;
         }
     }
 
