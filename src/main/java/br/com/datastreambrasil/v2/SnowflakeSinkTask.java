@@ -190,25 +190,22 @@ public class SnowflakeSinkTask extends SinkTask {
     }
 
     private void addRecordUsingCDCFormat(Map<String, Object> mapValue, SinkRecord record) {
-        validateFieldOnMap(PAYLOAD, mapValue);
-        var mapPayload = (Map<String, Object>) mapValue.get(PAYLOAD);
-
-        validateFieldOnMap(OP, mapPayload);
-        var op = mapPayload.get(OP);
+        validateFieldOnMap(OP, mapValue);
+        var op = mapValue.get(OP);
         Map<String, Object> mapPayloadAfterBefore;
         if (op.equals(DELETE)) {
-            validateFieldOnMap(BEFORE, mapPayload);
-            mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(BEFORE);
+            validateFieldOnMap(BEFORE, mapValue);
+            mapPayloadAfterBefore = (Map<String, Object>) mapValue.get(BEFORE);
         } else {
-            validateFieldOnMap(AFTER, mapPayload);
-            mapPayloadAfterBefore = (Map<String, Object>) mapPayload.get(AFTER);
+            validateFieldOnMap(AFTER, mapValue);
+            mapPayloadAfterBefore = (Map<String, Object>) mapValue.get(AFTER);
         }
 
         // topic,partition,offset,operation
         mapPayloadAfterBefore.put(IHTOPIC, record.topic());
         mapPayloadAfterBefore.put(IHPARTITION, record.kafkaPartition());
         mapPayloadAfterBefore.put(IHOFFSET, String.valueOf(record.kafkaOffset()));
-        mapPayloadAfterBefore.put(IHOP, String.valueOf(mapPayload.get(OP)));
+        mapPayloadAfterBefore.put(IHOP, String.valueOf(mapValue.get(OP)));
 
         var mapCaseInsensitive = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         mapCaseInsensitive.putAll(mapPayloadAfterBefore);
