@@ -53,7 +53,6 @@ public class SnowflakeSinkTask extends SinkTask {
     private final List<String> pks = new ArrayList<>();
     private final List<String> ignoreColumns = new ArrayList<>();
     private final Collection<Map<String, Object>> buffer = new ArrayList<>();
-    private static final String PAYLOAD = "payload";
     private static final String AFTER = "after";
     private static final String BEFORE = "before";
     private static final String OP = "op";
