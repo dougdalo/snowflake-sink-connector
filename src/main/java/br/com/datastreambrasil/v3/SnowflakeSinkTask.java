@@ -507,6 +507,7 @@ public class SnowflakeSinkTask extends SinkTask {
         flushHasUpdatedRecords = false;
         flushHasInsertedRecords = false;
 
+        boolean loggedDebugForFirstLine = false;
         for (var recordInBuffer : buffer.values()) {
             var count = 0;
             var op = recordInBuffer.get(IHOP).toString();
@@ -554,6 +555,10 @@ public class SnowflakeSinkTask extends SinkTask {
 
 
             stringBuilder.append("\n");
+            if (!loggedDebugForFirstLine && LOGGER.isDebugEnabled()) {
+                LOGGER.debug("First lines of csv: {}", stringBuilder);
+                loggedDebugForFirstLine = true;
+            }
         }
 
         if (!stringBuilder.isEmpty()) {

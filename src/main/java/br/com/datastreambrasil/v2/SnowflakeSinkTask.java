@@ -293,6 +293,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
         var csvInMemory = new ByteArrayOutputStream();
 
+        boolean loggedDebugForFirstLine = false;
         for (var recordInBuffer : buffer) {
             for (int i = 0; i < columnsFromTable.size(); i++) {
                 var columnFromSnowflakeTable = columnsFromTable.get(i);
@@ -320,6 +321,11 @@ public class SnowflakeSinkTask extends SinkTask {
             }
 
             csvInMemory.writeBytes("\n".getBytes());
+
+            if (!loggedDebugForFirstLine && LOGGER.isDebugEnabled()) {
+                LOGGER.debug("First lines of csv: {}", csvInMemory.toString(StandardCharsets.UTF_8));
+                loggedDebugForFirstLine = true;
+            }
         }
 
         return csvInMemory;
