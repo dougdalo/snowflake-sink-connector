@@ -536,6 +536,7 @@ public class SnowflakeSinkTask extends SinkTask {
                     }
 
                     if (valueFromRecord != null) {
+                        valueFromRecord = valueFromRecord.toString().replaceAll("\"", "'");
                         var strBuffer = "\"" + valueFromRecord + "\"";
                         stringBuilder.append(strBuffer);
                     }
