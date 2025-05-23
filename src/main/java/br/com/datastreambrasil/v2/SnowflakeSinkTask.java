@@ -62,6 +62,7 @@ public class SnowflakeSinkTask extends SinkTask {
     private static final String IHOP = "ih_op";
     private static final String DELETE = "d";
     private Scheduler scheduler;
+    private boolean removeStageAfterCopy;
 
     // quartz constants
     protected static final String KEY_SNOWFLAKE_CONNECTION = "snowflakeConnection";
@@ -86,6 +87,7 @@ public class SnowflakeSinkTask extends SinkTask {
             truncateBeforeBulk = config.getBoolean(SnowflakeSinkConnector.CFG_ALWAYS_TRUNCATE_BEFORE_BULK);
             truncateWhenNoDataAfterSeconds = config
                     .getInt(SnowflakeSinkConnector.CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS);
+            removeStageAfterCopy = config.getBoolean(SnowflakeSinkConnector.CFG_REMOVE_STAGE_AFTER_COPY);
 
             var disableCleanUpJob = config.getBoolean(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DISABLE);
             var intervalHoursCleanup = config.getInt(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
@@ -240,29 +242,20 @@ public class SnowflakeSinkTask extends SinkTask {
                 }
             }
 
-            try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable(columnsFinalTable);
-                    var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())) {
+            var lines = prepareOrderedColumnsBasedOnTargetTable(columnsFinalTable);
+            try (var csvToInsert = createCsvFile(lines);
+                 var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())) {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
                 try (var stmt = connection.createStatement()) {
-                    String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", tableName, String.join(",", columnsFinalTable),
-                            stageName, destFileName);
+                    String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz %s", tableName, String.join(",", columnsFinalTable),
+                            stageName, destFileName, removeStageAfterCopy ? "PURGE = TRUE" : "");
                     LOGGER.debug("Copying statement: {}", copyInto);
                     stmt.executeUpdate(copyInto);
                 }
             }
 
         } catch (Throwable e) {
-            try {
-                try (var stmt = connection.createStatement()) {
-                    String removeFileFromStage = String.format("REMOVE @%s/%s.gz", stageName, destFileName);
-                    stmt.execute(removeFileFromStage);
-                }
-            } catch (Throwable e2) {
-                throw new RuntimeException("Error while removing file [" + destFileName + "] from stage " + stageName,
-                        e2);
-            }
-
             LOGGER.error("Error while flushing Snowflake connector", e);
             throw new RuntimeException("Error while flushing", e);
         } finally {
@@ -289,12 +282,22 @@ public class SnowflakeSinkTask extends SinkTask {
         }
     }
 
-    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(List<String> columnsFromTable) {
-
+    private ByteArrayOutputStream createCsvFile(List<String> lines) {
         var csvInMemory = new ByteArrayOutputStream();
+        for (var line : lines) {
+            csvInMemory.writeBytes(line.getBytes(StandardCharsets.UTF_8));
+            csvInMemory.writeBytes("\n".getBytes());
+        }
+        return csvInMemory;
+    }
+
+    private List<String> prepareOrderedColumnsBasedOnTargetTable(List<String> columnsFromTable) {
+
+        var lines = new ArrayList<String>();
 
         boolean loggedDebugForFirstLine = false;
         for (var recordInBuffer : buffer) {
+            var fullLine = new StringBuilder();
             for (int i = 0; i < columnsFromTable.size(); i++) {
                 var columnFromSnowflakeTable = columnsFromTable.get(i);
                 if (recordInBuffer.containsKey(columnFromSnowflakeTable)) {
@@ -308,27 +311,27 @@ public class SnowflakeSinkTask extends SinkTask {
                     }
 
                     if (valueFromRecord != null) {
-                        var strBuffer = "\"" + valueFromRecord + "\"";
-                        csvInMemory.writeBytes(strBuffer.getBytes(StandardCharsets.UTF_8));
+                        valueFromRecord = valueFromRecord.toString().replaceAll("\"", "'");
+                        fullLine.append("\"").append(valueFromRecord).append("\"");
                     }
                 } else {
                     LOGGER.warn("Column {} not found on buffer, inserted empty value", columnFromSnowflakeTable);
                 }
 
                 if (i < columnsFromTable.size() - 1) {
-                    csvInMemory.writeBytes(",".getBytes());
+                    fullLine.append(",");
                 }
             }
 
-            csvInMemory.writeBytes("\n".getBytes());
+            lines.add(fullLine.toString());
 
             if (!loggedDebugForFirstLine && LOGGER.isDebugEnabled()) {
-                LOGGER.debug("First lines of csv: {}", csvInMemory.toString(StandardCharsets.UTF_8));
+                LOGGER.debug("csv line: {}", fullLine);
                 loggedDebugForFirstLine = true;
             }
         }
 
-        return csvInMemory;
+        return lines;
     }
 
     private boolean containsAny(String checkValue, List<String> values) {

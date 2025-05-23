@@ -34,6 +34,8 @@ public class SnowflakeSinkConnector extends SinkConnector {
         protected static final String CFG_ALWAYS_TRUNCATE_BEFORE_BULK = "always_truncate_before_bulk";
         protected static final String CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS = "truncate_when_nodata_after_seconds";
 
+        protected static final String CFG_REMOVE_STAGE_AFTER_COPY = "remove_stage_after_copy";
+
         static final ConfigDef CONFIG_DEF = new ConfigDef()
                         .define(CFG_STAGE_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
                                         "Stage name to write files")
@@ -63,6 +65,9 @@ public class SnowflakeSinkConnector extends SinkConnector {
                         .define(CFG_ALWAYS_TRUNCATE_BEFORE_BULK, ConfigDef.Type.BOOLEAN, false,
                                         ConfigDef.Importance.HIGH,
                                         "If true, we will truncate the table before copying it to snowflake")
+                        .define(CFG_REMOVE_STAGE_AFTER_COPY, ConfigDef.Type.BOOLEAN, true,
+                                ConfigDef.Importance.HIGH,
+                                "If true, we will remove the stage after copying it to snowflake")
                         .define(CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS, ConfigDef.Type.INT, 1800,
                                         ConfigDef.Importance.HIGH,
                                         "If we don't receive any event for this amount of time, we will truncate the table in snowflake");
