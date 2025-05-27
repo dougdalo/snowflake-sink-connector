@@ -7,6 +7,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -50,6 +51,8 @@ public class SnowflakeSinkTask extends SinkTask {
     private LocalDateTime lastFlush = LocalDateTime.now();
 
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
+    private final List<String> dateFieldsConvert = new ArrayList<>();
+
     private final List<String> pks = new ArrayList<>();
     private final List<String> ignoreColumns = new ArrayList<>();
     private final Collection<Map<String, Object>> buffer = new ArrayList<>();
@@ -95,6 +98,12 @@ public class SnowflakeSinkTask extends SinkTask {
             if (map.containsKey(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS)) {
                 timestampFieldsConvertToSeconds.addAll(
                         Arrays.stream(map.get(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS).split(","))
+                                .toList());
+            }
+
+            if (map.containsKey(SnowflakeSinkConnector.CFG_DATE_FIELDS_CONVERT)) {
+                dateFieldsConvert.addAll(
+                        Arrays.stream(map.get(SnowflakeSinkConnector.CFG_DATE_FIELDS_CONVERT).split(","))
                                 .toList());
             }
 
@@ -303,15 +312,21 @@ public class SnowflakeSinkTask extends SinkTask {
                 if (recordInBuffer.containsKey(columnFromSnowflakeTable)) {
                     var valueFromRecord = recordInBuffer.get(columnFromSnowflakeTable);
 
-                    if (valueFromRecord != null
-                            && containsAny(columnFromSnowflakeTable, timestampFieldsConvertToSeconds)) {
-                        var valueFromRecordAsLong = (long) valueFromRecord;
-                        valueFromRecord = LocalDateTime.ofInstant(Instant.ofEpochMilli(valueFromRecordAsLong),
-                                TimeZone.getDefault().toZoneId()).toString();
+                    if (valueFromRecord != null) {
+                        if (containsAny(columnFromSnowflakeTable, timestampFieldsConvertToSeconds)){
+                            var valueFromRecordAsLong = (long) valueFromRecord;
+                            valueFromRecord = LocalDateTime.ofInstant(Instant.ofEpochMilli(valueFromRecordAsLong),
+                                    TimeZone.getDefault().toZoneId()).toString();
+                        }else if (containsAny(columnFromSnowflakeTable, dateFieldsConvert)) {
+                            var valueFromRecordAsLong = (long) valueFromRecord;
+                            var daysInSeconds = valueFromRecordAsLong * 24 * 60 * 60;
+                            valueFromRecord = LocalDate.ofInstant(Instant.ofEpochSecond(daysInSeconds),
+                                    TimeZone.getDefault().toZoneId()).toString();
+                        }
                     }
 
                     if (valueFromRecord != null) {
-                        valueFromRecord = valueFromRecord.toString().replaceAll("\"", "'");
+                        valueFromRecord = valueFromRecord.toString().replaceAll("\"", "\"\"");
                         fullLine.append("\"").append(valueFromRecord).append("\"");
                     }
                 } else {
