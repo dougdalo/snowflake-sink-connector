@@ -9,6 +9,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -52,6 +53,7 @@ public class SnowflakeSinkTask extends SinkTask {
 
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final List<String> dateFieldsConvert = new ArrayList<>();
+    private final List<String> timeFieldsConvert = new ArrayList<>();
 
     private final List<String> pks = new ArrayList<>();
     private final List<String> ignoreColumns = new ArrayList<>();
@@ -104,6 +106,12 @@ public class SnowflakeSinkTask extends SinkTask {
             if (map.containsKey(SnowflakeSinkConnector.CFG_DATE_FIELDS_CONVERT)) {
                 dateFieldsConvert.addAll(
                         Arrays.stream(map.get(SnowflakeSinkConnector.CFG_DATE_FIELDS_CONVERT).split(","))
+                                .toList());
+            }
+
+            if (map.containsKey(SnowflakeSinkConnector.CFG_TIME_FIELDS_CONVERT)) {
+                timeFieldsConvert.addAll(
+                        Arrays.stream(map.get(SnowflakeSinkConnector.CFG_TIME_FIELDS_CONVERT).split(","))
                                 .toList());
             }
 
@@ -256,13 +264,22 @@ public class SnowflakeSinkTask extends SinkTask {
                  var inputStream = new ByteArrayInputStream(csvToInsert.toByteArray())) {
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
                         destFileName, true);
-                try (var stmt = connection.createStatement()) {
-                    String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz %s", tableName, String.join(",", columnsFinalTable),
-                            stageName, destFileName, removeStageAfterCopy ? "PURGE = TRUE" : "");
-                    LOGGER.debug("Copying statement: {}", copyInto);
-                    stmt.executeUpdate(copyInto);
-                }
+
+            }catch (Throwable e) {
+                LOGGER.error("Error while creating csv file or uploading to stage", e);
+                throw new RuntimeException("Error while creating csv file or uploading to stage", e);
+            } finally {
+                // clear buffer and lines after upload so we avoid wasting memory
+                buffer.clear();
+                lines.clear();
             }
+
+
+            var stmt = connection.createStatement();
+            String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz %s", tableName, String.join(",", columnsFinalTable),
+                    stageName, destFileName, removeStageAfterCopy ? "PURGE = TRUE" : "");
+            LOGGER.debug("Copying statement: {}", copyInto);
+            stmt.executeUpdate(copyInto);
 
         } catch (Throwable e) {
             LOGGER.error("Error while flushing Snowflake connector", e);
@@ -322,6 +339,9 @@ public class SnowflakeSinkTask extends SinkTask {
                             var daysInSeconds = valueFromRecordAsLong * 24 * 60 * 60;
                             valueFromRecord = LocalDate.ofInstant(Instant.ofEpochSecond(daysInSeconds),
                                     TimeZone.getDefault().toZoneId()).toString();
+                        }else if (containsAny(columnFromSnowflakeTable, timeFieldsConvert)) {
+                            var valueFromRecordAsLong = (long) valueFromRecord;
+                            valueFromRecord = LocalTime.ofNanoOfDay(valueFromRecordAsLong).toString();
                         }
                     }
 

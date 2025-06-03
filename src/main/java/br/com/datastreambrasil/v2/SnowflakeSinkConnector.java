@@ -14,6 +14,7 @@ public class SnowflakeSinkConnector extends SinkConnector {
         protected static final String CFG_TABLE_NAME = "table";
         protected static final String CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS = "timestamp_fields_convert_seconds";
         protected static final String CFG_DATE_FIELDS_CONVERT = "date_fields_convert";
+        protected static final String CFG_TIME_FIELDS_CONVERT = "time_fields_convert";
         protected static final String CFG_SCHEMA_NAME = "schema";
         protected static final String CFG_URL = "url";
         protected static final String CFG_USER = "user";
@@ -54,6 +55,9 @@ public class SnowflakeSinkConnector extends SinkConnector {
                         .define(CFG_DATE_FIELDS_CONVERT, ConfigDef.Type.LIST, null,
                                 ConfigDef.Importance.MEDIUM,
                                 "List of date fields we should convert to LocalDate")
+                        .define(CFG_TIME_FIELDS_CONVERT, ConfigDef.Type.LIST, null,
+                                ConfigDef.Importance.MEDIUM,
+                        "List of time fields we should convert to LocalTime")
                         .define(CFG_IGNORE_COLUMNS, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
                                         "List of columns to ignore")
                         .define(CFG_PK, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
