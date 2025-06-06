@@ -6,6 +6,7 @@ help:
 	@echo "stop - Stop the project"
 	@echo "init-sqlserver - Init tables on SQL Server DB"
 	@echo "populate-sqlserver - Populate tables on SQL Server DB"
+	@echo "clean-sqlserver - Clean tables on SQL Server DB"
 	@echo "create-debezium-connector - Create Debezium SQL Server connector to ingest data on kafka"
 	@echo "delete-debezium-connector - Delete Debezium SQL Server connector"
 	@echo "create-snowflake-connector - Create Snowflake connector to ingest data on Snowflake"
@@ -30,6 +31,11 @@ init-sqlserver:
 populate-sqlserver:
 	docker run --rm -v $(PWD)/infra/scripts:/scripts mcr.microsoft.com/mssql-tools /opt/mssql-tools/bin/sqlcmd -S host.docker.internal -U sa -P Password123! -d master -i /scripts/populate.sql
 
+.PHONY: clean-sqlserver
+clean-sqlserver:
+	docker run --rm -v $(PWD)/infra/scripts:/scripts mcr.microsoft.com/mssql-tools /opt/mssql-tools/bin/sqlcmd -S host.docker.internal -U sa -P Password123! -d master -i /scripts/delete_all.sql
+
+
 .PHONY: create-debezium-connector
 create-debezium-connector:
 	curl -v -X POST -H "Content-Type: application/json" --data @./infra/debezium.json http://localhost:8083/connectors | jq
@@ -49,4 +55,4 @@ delete-snowflake-connector:
 .PHONY: clean-data
 clean-data:
 	@echo "Cleaning up the project data folders..."
-	@rm -rf data/sqlserver data/kafa data/zoo
+	@rm -rf infra/data/*

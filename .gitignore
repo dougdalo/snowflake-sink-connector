@@ -40,3 +40,4 @@ build/
 infra/plugins/snowflake/snowflake-sink-connector-3.2.0-jar-with-dependencies.jar
 infra/snowflake.json
 infra/data
+.idea

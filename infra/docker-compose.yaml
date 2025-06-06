@@ -32,18 +32,18 @@ services:
       - ./data/kafka:/var/lib/kafka/data
 
   schemaregistry:
-    image: confluentinc/cp-schema-registry:7.2.1
+    image: confluentinc/cp-schema-registry:7.9.1
     depends_on:
       - zookeeper
     environment:
-      SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: "zookeeper:2181"
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "broker:29092"
       SCHEMA_REGISTRY_HOST_NAME: schemaregistry
       SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8085"
     ports:
       - 8085:8085
 
   kconnect:
-    image: confluentinc/cp-kafka-connect:7.7.1
+    image: confluentinc/cp-kafka-connect:7.9.1
     ports:
       - 8083:8083 #rest
       - 9999:9999 #jmx
@@ -84,6 +84,8 @@ services:
             kafka:
               properties:
                 bootstrap.servers: "broker:29092"
+              schema-registry:
+                url: "http://schemaregistry:8085"
     depends_on:
       - broker
     ports:
