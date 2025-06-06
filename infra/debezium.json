@@ -1,0 +1,23 @@
+{
+  "name": "dbz-sqlserver",
+  "config": {
+    "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
+    "database.user": "sa",
+    "database.names": "test",
+    "database.encrypt": false,
+    "key.converter.schemas.enable": false,
+    "value.converter.schemas.enable": false,
+    "tasks.max": "1",
+    "topic.prefix": "cdc",
+    "schema.history.internal.kafka.bootstrap.servers": "broker:29092",
+    "schema.history.internal.kafka.topic": "cdc-history",
+    "database.server.name": "sqlserver",
+    "database.port": 1433,
+    "database.hostname": "sqlserver",
+    "database.password": "Password123!",
+    "table.include.list": "dbo.events",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "tombstones.on.delete": "false"
+  }
+}
