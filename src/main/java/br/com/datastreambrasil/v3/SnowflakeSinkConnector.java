@@ -13,7 +13,9 @@ public class SnowflakeSinkConnector extends SinkConnector {
     protected static final String VERSION = "v3";
     protected static final String CFG_STAGE_NAME = "stage";
     protected static final String CFG_TABLE_NAME = "table";
-    protected static final String CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS = "timestamp_fields_convert_seconds";
+    protected static final String CFG_TIMESTAMP_FIELDS_CONVERT = "timestamp_fields_convert";
+    protected static final String CFG_DATE_FIELDS_CONVERT = "date_fields_convert";
+    protected static final String CFG_TIME_FIELDS_CONVERT = "time_fields_convert";
     protected static final String CFG_SCHEMA_NAME = "schema";
     protected static final String CFG_URL = "url";
     protected static final String CFG_USER = "user";
@@ -21,12 +23,11 @@ public class SnowflakeSinkConnector extends SinkConnector {
     protected static final String CFG_PK = "pk";
     protected static final String CFG_JOB_CLEANUP_HOURS = "job_cleanup_hours";
     protected static final String CFG_JOB_CLEANUP_DISABLE = "job_cleanup_disable";
-    protected static final String CFG_PAYLOAD_CDC_FORMAT = "payload_cdc_format";
-    protected static final String CFG_SNAPSHOT_MODE_DISABLE = "snapshot_mode_disable";
     protected static final String CFG_IGNORE_COLUMNS = "ignore_columns";
     protected static final String CFG_REDIS_HOST = "redis_host";
     protected static final String CFG_REDIS_PORT = "redis_port";
     protected static final String CFG_REDIS_KEY_TTL_SECONDS = "redis_key_ttl_seconds";
+    protected static final String CFG_PROFILE = "profile";
 
     /*
      * For some use cases we need to load all data again, each time. So we have two
@@ -50,9 +51,15 @@ public class SnowflakeSinkConnector extends SinkConnector {
                     "Password to snowflake connection")
             .define(CFG_TABLE_NAME, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
                     "Target table to copy data into")
-            .define(CFG_TIMESTAMP_FIELDS_CONVERT_SECONDS, ConfigDef.Type.LIST, null,
+            .define(CFG_TIMESTAMP_FIELDS_CONVERT, ConfigDef.Type.LIST, null,
                     ConfigDef.Importance.MEDIUM,
-                    "List of timestamp fields we should convert to seconds")
+                    "List of timestamp fields we should convert to LocalDateTime")
+            .define(CFG_DATE_FIELDS_CONVERT, ConfigDef.Type.LIST, null,
+                    ConfigDef.Importance.MEDIUM,
+                    "List of date fields we should convert to LocalDate")
+            .define(CFG_TIME_FIELDS_CONVERT, ConfigDef.Type.LIST, null,
+                    ConfigDef.Importance.MEDIUM,
+                    "List of time fields we should convert to LocalTime")
             .define(CFG_PK, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
                     "List of primary keys to be used.")
             .define(CFG_IGNORE_COLUMNS, ConfigDef.Type.LIST, null, ConfigDef.Importance.MEDIUM,
@@ -63,19 +70,18 @@ public class SnowflakeSinkConnector extends SinkConnector {
                     "Target schema to copy data into")
             .define(CFG_JOB_CLEANUP_DISABLE, ConfigDef.Type.BOOLEAN, false, ConfigDef.Importance.HIGH,
                     "Disable clean up job")
-            .define(CFG_PAYLOAD_CDC_FORMAT, ConfigDef.Type.BOOLEAN, true, ConfigDef.Importance.HIGH,
-                    "Set if payload is CDC format")
             .define(CFG_ALWAYS_TRUNCATE_BEFORE_BULK, ConfigDef.Type.BOOLEAN, false,
                     ConfigDef.Importance.HIGH,
                     "If true, we will truncate the table before copying it to snowflake")
-            .define(CFG_SNAPSHOT_MODE_DISABLE, ConfigDef.Type.BOOLEAN, false, ConfigDef.Importance.HIGH,
-                    "If true, we will not use snapshot mode")
             .define(CFG_REDIS_HOST, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH,
                     "redis host")
             .define(CFG_REDIS_PORT, ConfigDef.Type.INT, null, ConfigDef.Importance.HIGH,
                     "redis port")
             .define(CFG_REDIS_KEY_TTL_SECONDS, ConfigDef.Type.INT, 120, ConfigDef.Importance.HIGH,
                     "redis key ttl in seconds.")
+            .define(CFG_PROFILE, ConfigDef.Type.STRING, "cdc_schema",
+                    ConfigDef.Importance.HIGH,
+                    "Profile to use for the connector. Might be one of: cdc_schema, cdc_schemaless, bulk_schemaless")
             .define(CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS, ConfigDef.Type.INT, 1800,
                     ConfigDef.Importance.HIGH,
                     "If we don't receive any event for this amount of time, we will truncate the table in snowflake");
