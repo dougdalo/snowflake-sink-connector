@@ -1,79 +1,63 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>
-        4.0.0
-    </modelVersion>
-    <groupId>
-        br.com.datastreambrasil
-    </groupId>
-    <artifactId>
-        snowflake-sink-connector
-    </artifactId>
-    <version>
-        3.3.0
-    </version>
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>br.com.datastreambrasil</groupId>
+    <artifactId>snowflake-sink-connector</artifactId>
+    <version>3.3.0</version>
     <properties>
-        <maven.compiler.source>
-            17
-        </maven.compiler.source>
-        <maven.compiler.target>
-            17
-        </maven.compiler.target>
-        <project.build.sourceEncoding>
-            UTF-8
-        </project.build.sourceEncoding>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-bom</artifactId>
+                <version>2.24.3</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
-            <groupId>
-                org.apache.kafka
-            </groupId>
-            <artifactId>
-                connect-api
-            </artifactId>
-            <version>
-                3.9.0
-            </version>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>connect-api</artifactId>
+            <version>3.9.0</version>
+        </dependency>
+
+        <!-- logs -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.16</version>
         </dependency>
         <dependency>
-            <groupId>
-                org.slf4j
-            </groupId>
-            <artifactId>
-                slf4j-api
-            </artifactId>
-            <version>
-                2.0.16
-            </version>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j2-impl</artifactId>
         </dependency>
         <dependency>
-            <groupId>
-                net.snowflake
-            </groupId>
-            <artifactId>
-                snowflake-jdbc
-            </artifactId>
-            <version>
-                3.21.0
-            </version>
-        </dependency>
-        <!-- Quartz Core -->
-        <dependency>
-            <groupId>
-                org.quartz-scheduler
-            </groupId>
-            <artifactId>
-                quartz
-            </artifactId>
-            <version>
-                2.5.0
-            </version>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
         </dependency>
         <dependency>
-            <groupId>redis.clients</groupId>
-            <artifactId>jedis</artifactId>
-            <version>6.0.0</version>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-layout-template-json</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- logs -->
+
+        <!-- tests -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.18.0</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -81,38 +65,42 @@
             <version>5.13.0</version>
             <scope>test</scope>
         </dependency>
+        <!-- tests -->
+
+        <dependency>
+            <groupId>net.snowflake</groupId>
+            <artifactId>snowflake-jdbc</artifactId>
+            <version>3.21.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.quartz-scheduler</groupId>
+            <artifactId>quartz</artifactId>
+            <version>2.5.0</version>
+        </dependency>
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>6.0.0</version>
+        </dependency>
+
     </dependencies>
     <build>
         <plugins>
             <plugin>
-                <groupId>
-                    org.apache.maven.plugins
-                </groupId>
-                <artifactId>
-                    maven-assembly-plugin
-                </artifactId>
-                <version>
-                    3.7.1
-                </version>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
                 <configuration>
                     <descriptorRefs>
-                        <descriptorRef>
-                            jar-with-dependencies
-                        </descriptorRef>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
                 </configuration>
                 <executions>
                     <execution>
-                        <id>
-                            assemble-all
-                        </id>
-                        <phase>
-                            package
-                        </phase>
+                        <id>assemble-all</id>
+                        <phase>package</phase>
                         <goals>
-                            <goal>
-                                single
-                            </goal>
+                            <goal>single</goal>
                         </goals>
                     </execution>
                 </executions>

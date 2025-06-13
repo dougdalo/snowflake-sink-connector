@@ -1,5 +1,6 @@
 package br.com.datastreambrasil.v3;
 
+import br.com.datastreambrasil.v3.model.SnowflakeRecord;
 import net.snowflake.client.jdbc.SnowflakeConnection;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -29,6 +30,8 @@ public abstract class AbstractProcessor {
     protected List<String> timestampFieldsConvert = new ArrayList<>();
     protected List<String> dateFieldsConvert = new ArrayList<>();
     protected List<String> timeFieldsConvert = new ArrayList<>();
+    protected final Map<String, SnowflakeRecord> buffer = new HashMap<>();
+
 
     protected static final String AFTER = "after";
     protected static final String BEFORE = "before";
@@ -62,6 +65,23 @@ public abstract class AbstractProcessor {
     }
 
     protected void start(AbstractConfig config) {
+        configParameters(config);
+        configMetadata();
+        setupSnowflakeConnection(config);
+        extraConfigsOnStart(config);
+    }
+
+    protected void configMetadata() {
+        try {
+            columnsFinalTable = getColumnsFromMetadata(tableName);
+            columnsIngestTable = getColumnsFromMetadata(ingestTableName);
+        } catch (SQLException e) {
+            logger.error("Error while get metadata columns from snowflake", e);
+            throw new RuntimeException("Error while get metadata columns from snowflake", e);
+        }
+    }
+
+    protected void configParameters(AbstractConfig config) {
         stageName = config.getString(SnowflakeSinkConnector.CFG_STAGE_NAME);
         tableName = config.getString(SnowflakeSinkConnector.CFG_TABLE_NAME);
         ingestTableName = tableName + INGEST_SUFFIX;
@@ -93,31 +113,19 @@ public abstract class AbstractProcessor {
             ignoreColumns.addAll(Arrays.stream(config.getString(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS)
                     .split(",")).toList());
         }
+    }
 
+    protected void setupSnowflakeConnection(AbstractConfig config) {
         try {
-            setupSnowflakeConnection(config);
+            var properties = new Properties();
+            properties.put("user", config.getString(SnowflakeSinkConnector.CFG_USER));
+            properties.put("password", config.getString(SnowflakeSinkConnector.CFG_PASSWORD));
+            connection = DriverManager.getConnection(config.getString(SnowflakeSinkConnector.CFG_URL), properties);
+            snowflakeConnection = connection.unwrap(SnowflakeConnection.class);   // using the provided configuration.
         } catch (SQLException e) {
             logger.error("Error while connecting to snowflake connection", e);
             throw new RuntimeException("Error while connecting to snowflake connection", e);
         }
-
-        try {
-            columnsFinalTable = getColumnsFromMetadata(tableName);
-            columnsIngestTable = getColumnsFromMetadata(ingestTableName);
-        } catch (SQLException e) {
-            logger.error("Error while get metadata columns from snowflake", e);
-            throw new RuntimeException("Error while get metadata columns from snowflake", e);
-        }
-
-        extraConfigsOnStart(config);
-    }
-
-    protected void setupSnowflakeConnection(AbstractConfig config) throws SQLException {
-        var properties = new Properties();
-        properties.put("user", config.getString(SnowflakeSinkConnector.CFG_USER));
-        properties.put("password", config.getString(SnowflakeSinkConnector.CFG_PASSWORD));
-        connection = DriverManager.getConnection(config.getString(SnowflakeSinkConnector.CFG_URL), properties);
-        snowflakeConnection = connection.unwrap(SnowflakeConnection.class);   // using the provided configuration.
     }
 
     private List<String> getColumnsFromMetadata(String table) throws SQLException {
@@ -126,7 +134,7 @@ public abstract class AbstractProcessor {
         var columnsFromTable = new ArrayList<String>();
         try (var rsColumns = metadata.getColumns(null, schemaName.toUpperCase(), table.toUpperCase(), null)) {
             while (rsColumns.next()) {
-                columnsFromTable.add(rsColumns.getString("COLUMN_NAME").toUpperCase());
+                columnsFromTable.add(rsColumns.getString("COLUMN_NAME"));
             }
         }
         if (columnsFromTable.isEmpty()) {

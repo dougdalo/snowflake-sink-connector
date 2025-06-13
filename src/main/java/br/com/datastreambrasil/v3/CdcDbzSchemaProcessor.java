@@ -1,5 +1,7 @@
 package br.com.datastreambrasil.v3;
 
+import br.com.datastreambrasil.v3.exception.InvalidStructException;
+import br.com.datastreambrasil.v3.model.SnowflakeRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.AbstractConfig;
@@ -24,20 +26,10 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
     private Scheduler scheduler;
     private List<String> pks = new ArrayList<>();
-    private Map<String, SnowflakeRecord> buffer = new HashMap<>();
     private boolean snapshotRecords = true;
     private boolean flushHasDeletedRecords;
     private boolean flushHasInsertedRecords;
     private boolean flushHasUpdatedRecords;
-
-    static class SnowflakeRecord {
-        private Struct event;
-        private String topic;
-        private int partition;
-        private long offset;
-        private String op;
-        private LocalDateTime timestamp;
-    }
 
     @Override
     protected void extraConfigsOnStart(AbstractConfig config) {
@@ -51,56 +43,58 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
     @Override
     protected void put(Collection<SinkRecord> collection) {
-        try {
-            for (SinkRecord record : collection) {
+        for (SinkRecord record : collection) {
 
-                if (record.topic() == null || record.kafkaPartition() == null) {
-                    logger.error("Null values for topic or kafkaPartition. Topic {}, KafkaPartition {}", record.topic(),
-                            record.kafkaPartition());
-                    throw new RuntimeException("Null values for topic or kafkaPartition");
-                }
-
-                pks = extractPK(record);
-
-                var fieldOP = record.valueSchema().field(OP);
-                if (fieldOP == null) {
-                    logger.error("Field '{}' not found in value schema for record: {}", OP, record);
-                    throw new RuntimeException("Field '" + OP + "' not found in value schema");
-                }
-
-                if (!(record.value() instanceof Struct valueRecord)) {
-                    throw new RuntimeException("Expected value to be a Struct, but got: " + record.value().getClass().getName());
-                }
-
-                var valueOP = valueRecord.getString(fieldOP.name());
-                if (valueOP == null) {
-                    logger.error("Value for field '{}' is null in record: {}", OP, record);
-                    throw new RuntimeException("Value for field '" + OP + "' is null");
-                }
-
-
-                snapshotRecords = debeziumOperation.r.toString().equalsIgnoreCase(valueOP);
-
-                var recordToSnowflake = new SnowflakeRecord();
-                if (debeziumOperation.d.toString().equalsIgnoreCase(valueOP)) {
-                    recordToSnowflake.event = valueRecord.getStruct(BEFORE);
-                } else {
-                    recordToSnowflake.event = valueRecord.getStruct(AFTER);
-                }
-
-
-                recordToSnowflake.topic = record.topic();
-                recordToSnowflake.partition = record.kafkaPartition();
-                recordToSnowflake.offset = record.kafkaOffset();
-                recordToSnowflake.op = valueOP;
-                recordToSnowflake.timestamp = LocalDateTime.now(ZoneOffset.UTC);
-
-                buffer.put(convertPKToStringKey(record), recordToSnowflake);
+            if (!validate(record)) {
+                throw new InvalidStructException("Invalid record structure or schema");
             }
-        } catch (Throwable e) {
-            logger.error("Error while putting records", e);
-            throw new RuntimeException("Error while putting records", e);
+
+            pks = extractPK(record);
+
+            var fieldOP = record.valueSchema().field(OP);
+            if (fieldOP == null) {
+                logger.error("Field '{}' not found in value schema for record: {}", OP, record);
+                throw new InvalidStructException("Field '" + OP + "' not found in value schema");
+            }
+
+            var valueRecord = (Struct) record.value();
+            var valueOP = valueRecord.getString(fieldOP.name());
+            if (valueOP == null) {
+                logger.error("Value for field '{}' is null in record: {}", OP, record);
+                throw new InvalidStructException("Value for field '" + OP + "' is null");
+            }
+
+
+            snapshotRecords = debeziumOperation.r.toString().equalsIgnoreCase(valueOP);
+
+            var recordToSnowflake = new SnowflakeRecord(
+                    debeziumOperation.d.toString().equalsIgnoreCase(valueOP) ? valueRecord.getStruct(BEFORE) : valueRecord.getStruct(AFTER),
+                    record.topic(),
+                    record.kafkaPartition(),
+                    record.kafkaOffset(),
+                    valueOP,
+                    LocalDateTime.now(ZoneOffset.UTC)
+            );
+
+            logger.trace("Added record to buffer: {} with operation {}", recordToSnowflake, valueOP);
+            buffer.put(convertPKToStringKey(record), recordToSnowflake);
         }
+    }
+
+    private boolean validate(SinkRecord record) {
+        if (record.keySchema() == null || record.valueSchema() == null ||
+                !(record.key() instanceof Struct) || !(record.value() instanceof Struct)) {
+            logger.error("Key and value must be Structs with schemas. Key: {}, Value: {}", record.key(), record.value());
+            return false;
+        }
+
+        if (record.topic() == null || record.kafkaPartition() == null) {
+            logger.error("Null values for topic or kafkaPartition. Topic {}, KafkaPartition {}", record.topic(),
+                    record.kafkaPartition());
+            return false;
+        }
+
+        return true;
     }
 
     @Override
@@ -243,9 +237,6 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
     private List<String> extractPK(SinkRecord record) {
         if (pks.isEmpty()) {
-            if (record.keySchema() == null || record.valueSchema() == null) {
-                throw new RuntimeException("Schema is required for key and value in SinkRecord, using this profile");
-            }
             for (Field field : record.keySchema().fields()) {
                 pks.add(field.name());
             }
@@ -256,16 +247,13 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
 
     private String convertPKToStringKey(SinkRecord record) {
-        if (!(record.key() instanceof Struct keyStruct)) {
-            logger.error("Expected key to be a Struct, but got: {}", record.key().getClass().getName());
-            throw new RuntimeException("Expected key to be a Struct, but got: " + record.key().getClass().getName());
-        }
+        var keyStruct = (Struct) record.key();
         var pkValues = new ArrayList<String>();
         for (String pk : pks) {
             var value = keyStruct.get(pk);
             if (value == null) {
                 logger.error("Value for field '{}' is null in record: {}", pk, record);
-                throw new RuntimeException("Value for field '" + pk + "' is null");
+                throw new InvalidStructException("Value for field '" + pk + "' is null");
             }
             pkValues.add(value.toString());
         }
@@ -306,7 +294,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
         boolean loggedDebugForFirstLine = false;
         for (var recordInBuffer : buffer.values()) {
             var count = 0;
-            var op = recordInBuffer.op;
+            var op = recordInBuffer.op();
 
             if (debeziumOperation.d.toString().equalsIgnoreCase(op)) {
                 flushHasDeletedRecords = true;
@@ -326,22 +314,22 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                     var strBuffer = "\"" + blockID + "\"";
                     stringBuilder.append(strBuffer);
                 } else if (columnFromSnowflakeTable.equalsIgnoreCase(IHOP)) {
-                    var strBuffer = "\"" + recordInBuffer.op + "\"";
+                    var strBuffer = "\"" + recordInBuffer.op() + "\"";
                     stringBuilder.append(strBuffer);
                 } else if (columnFromSnowflakeTable.equalsIgnoreCase(IHTOPIC)) {
-                    var strBuffer = "\"" + recordInBuffer.topic + "\"";
+                    var strBuffer = "\"" + recordInBuffer.topic() + "\"";
                     stringBuilder.append(strBuffer);
                 } else if (columnFromSnowflakeTable.equalsIgnoreCase(IHDATETIME)) {
-                    var strBuffer = "\"" + recordInBuffer.timestamp + "\"";
+                    var strBuffer = "\"" + recordInBuffer.timestamp() + "\"";
                     stringBuilder.append(strBuffer);
                 } else if (columnFromSnowflakeTable.equalsIgnoreCase(IHPARTITION)) {
-                    var strBuffer = "\"" + recordInBuffer.partition + "\"";
+                    var strBuffer = "\"" + recordInBuffer.partition() + "\"";
                     stringBuilder.append(strBuffer);
                 } else if (columnFromSnowflakeTable.equalsIgnoreCase(IHOFFSET)) {
-                    var strBuffer = "\"" + recordInBuffer.offset + "\"";
+                    var strBuffer = "\"" + recordInBuffer.offset() + "\"";
                     stringBuilder.append(strBuffer);
                 } else {
-                    Object valueFromRecord = recordInBuffer.event.get(columnFromSnowflakeTable);
+                    Object valueFromRecord = recordInBuffer.event().get(columnFromSnowflakeTable);
                     if (valueFromRecord != null) {
                         if (containsAny(columnFromSnowflakeTable, timeFieldsConvert)) {
                             var valueFromRecordAsLong = (long) valueFromRecord;
