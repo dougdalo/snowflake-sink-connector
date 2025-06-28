@@ -1,29 +1,31 @@
 package br.com.datastreambrasil.v3;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
-import org.quartz.JobExecutionException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.List;
 
 public class CleanupJob implements Job {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(CleanupJob.class);
+    private static final Logger LOGGER = LogManager.getLogger();
+
+    protected static final String INGEST_TABLE_NAME = "ingest_table_name";
+    protected static final String CLEANUP_DURATION = "cleanup_hours";
+    protected static final String SNOWFLAKE_CONNECTION = "snowflake_connection";
 
     @Override
     public void execute(JobExecutionContext context) {
         var jobData = context.getMergedJobDataMap();
-        var ingest = (String) jobData.get(SnowflakeSinkTask.KEY_SNOWFLAKE_INGEST_TABLE_NAME);
-        var connection = (Connection) jobData.get(SnowflakeSinkTask.KEY_SNOWFLAKE_CONNECTION);
-        var intervalHours = jobData.get(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
+        var ingest = (String) jobData.get(INGEST_TABLE_NAME);
+        var connection = (Connection) jobData.get(SNOWFLAKE_CONNECTION);
 
+        // we delete records older than 4 hours only
         var deleteQuery = String.format("""
-                        delete from %s ingest where ih_datetime + interval '%s hour' < sysdate()
-                """, ingest, intervalHours);
+                    delete from %s ingest where ih_datetime + interval '%s hour' < sysdate()
+            """, ingest, 4);
 
         LOGGER.debug("Executing delete query: {}", deleteQuery);
         try (var stmt = connection.createStatement()) {

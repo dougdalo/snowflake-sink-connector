@@ -5,8 +5,8 @@ USE test;
 GO
 
 CREATE TABLE dbo.events (
-                            id int IDENTITY(1,1) primary key,
-                            type varchar(50) not null
+    ID int IDENTITY(1,1) primary key,
+    TYPE varchar(50) not null
 );
 GO
 
