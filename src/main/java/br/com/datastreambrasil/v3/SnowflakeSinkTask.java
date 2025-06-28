@@ -6,7 +6,8 @@ import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Map;
 
 public class SnowflakeSinkTask extends SinkTask {
 

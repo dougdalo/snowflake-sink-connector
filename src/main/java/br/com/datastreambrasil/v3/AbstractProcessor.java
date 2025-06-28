@@ -6,17 +6,22 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.*;
-import java.util.logging.LogManager;
-import java.util.logging.Logger;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 
 public abstract class AbstractProcessor {
 
-    protected final Logger logger = LogManager.getLogManager();
+    protected final static Logger LOGGER = LogManager.getLogger();
 
     protected Connection connection;
     protected SnowflakeConnection snowflakeConnection;
@@ -60,10 +65,6 @@ public abstract class AbstractProcessor {
 
     protected abstract void stop();
 
-    protected void validateConfigBeforeStart(AbstractConfig config) {
-        // Validate that all required configurations are present
-    }
-
     protected void start(AbstractConfig config) {
         configParameters(config);
         configMetadata();
@@ -76,7 +77,7 @@ public abstract class AbstractProcessor {
             columnsFinalTable = getColumnsFromMetadata(tableName);
             columnsIngestTable = getColumnsFromMetadata(ingestTableName);
         } catch (SQLException e) {
-            logger.error("Error while get metadata columns from snowflake", e);
+            LOGGER.error("Error while get metadata columns from snowflake", e);
             throw new RuntimeException("Error while get metadata columns from snowflake", e);
         }
     }
@@ -87,32 +88,11 @@ public abstract class AbstractProcessor {
         ingestTableName = tableName + INGEST_SUFFIX;
         schemaName = config.getString(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
 
-        if (config.getString(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT) != null &&
-                !config.getString(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT).isEmpty()) {
-            timestampFieldsConvert.addAll(
-                    Arrays.stream(config.getString(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT).split(","))
-                            .toList());
-        }
+        timestampFieldsConvert.addAll(config.getList(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT));
+        dateFieldsConvert.addAll(config.getList(SnowflakeSinkConnector.CFG_DATE_FIELDS_CONVERT));
+        timeFieldsConvert.addAll(config.getList(SnowflakeSinkConnector.CFG_TIME_FIELDS_CONVERT));
+        ignoreColumns.addAll(config.getList(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS));
 
-        if (config.getString(SnowflakeSinkConnector.CFG_DATE_FIELDS_CONVERT) != null &&
-                !config.getString(SnowflakeSinkConnector.CFG_DATE_FIELDS_CONVERT).isEmpty()) {
-            dateFieldsConvert.addAll(
-                    Arrays.stream(config.getString(SnowflakeSinkConnector.CFG_DATE_FIELDS_CONVERT).split(","))
-                            .toList());
-        }
-
-        if (config.getString(SnowflakeSinkConnector.CFG_TIME_FIELDS_CONVERT) != null &&
-                !config.getString(SnowflakeSinkConnector.CFG_TIME_FIELDS_CONVERT).isEmpty()) {
-            timeFieldsConvert.addAll(
-                    Arrays.stream(config.getString(SnowflakeSinkConnector.CFG_TIME_FIELDS_CONVERT).split(","))
-                            .toList());
-        }
-
-        if (config.getString(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS) != null
-                && !config.getString(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS).isEmpty()) {
-            ignoreColumns.addAll(Arrays.stream(config.getString(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS)
-                    .split(",")).toList());
-        }
     }
 
     protected void setupSnowflakeConnection(AbstractConfig config) {
@@ -123,7 +103,7 @@ public abstract class AbstractProcessor {
             connection = DriverManager.getConnection(config.getString(SnowflakeSinkConnector.CFG_URL), properties);
             snowflakeConnection = connection.unwrap(SnowflakeConnection.class);   // using the provided configuration.
         } catch (SQLException e) {
-            logger.error("Error while connecting to snowflake connection", e);
+            LOGGER.error("Error while connecting to snowflake connection", e);
             throw new RuntimeException("Error while connecting to snowflake connection", e);
         }
     }
@@ -139,14 +119,14 @@ public abstract class AbstractProcessor {
         }
         if (columnsFromTable.isEmpty()) {
             throw new RuntimeException(
-                    "Empty columns returned from target table " + table + ", schema " + schemaName);
+                "Empty columns returned from target table " + table + ", schema " + schemaName);
         }
 
         columnsFromTable.removeAll(ignoreColumns);
         //remove duplicated
         var columnsNoDuplicate = columnsFromTable.stream().distinct().toList();
 
-        logger.debug("Columns mapped from target table: {}", String.join(",", columnsNoDuplicate));
+        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsNoDuplicate));
 
 
         return columnsNoDuplicate;

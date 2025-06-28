@@ -8,15 +8,32 @@ import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.quartz.*;
+import org.quartz.JobBuilder;
+import org.quartz.JobDataMap;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.SimpleScheduleBuilder;
+import org.quartz.TriggerBuilder;
 import org.quartz.impl.StdSchedulerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
-import java.time.*;
-import java.util.*;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.TimeZone;
+import java.util.UUID;
 
 /**
  * CdcDbzSchemaProcessor receives SinkRecords using Struct with Schema in CDC Debezium format.
@@ -36,7 +53,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
         try {
             startCleanUpJob(config);
         } catch (SchedulerException e) {
-            logger.error("Error starting cleanup job", e);
+            LOGGER.error("Error starting cleanup job", e);
             throw new RuntimeException("Error starting cleanup job", e);
         }
     }
@@ -53,14 +70,14 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
             var fieldOP = record.valueSchema().field(OP);
             if (fieldOP == null) {
-                logger.error("Field '{}' not found in value schema for record: {}", OP, record);
+                LOGGER.error("Field '{}' not found in value schema for record: {}", OP, record);
                 throw new InvalidStructException("Field '" + OP + "' not found in value schema");
             }
 
             var valueRecord = (Struct) record.value();
             var valueOP = valueRecord.getString(fieldOP.name());
             if (valueOP == null) {
-                logger.error("Value for field '{}' is null in record: {}", OP, record);
+                LOGGER.error("Value for field '{}' is null in record: {}", OP, record);
                 throw new InvalidStructException("Value for field '" + OP + "' is null");
             }
 
@@ -68,29 +85,29 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
             snapshotRecords = debeziumOperation.r.toString().equalsIgnoreCase(valueOP);
 
             var recordToSnowflake = new SnowflakeRecord(
-                    debeziumOperation.d.toString().equalsIgnoreCase(valueOP) ? valueRecord.getStruct(BEFORE) : valueRecord.getStruct(AFTER),
-                    record.topic(),
-                    record.kafkaPartition(),
-                    record.kafkaOffset(),
-                    valueOP,
-                    LocalDateTime.now(ZoneOffset.UTC)
+                debeziumOperation.d.toString().equalsIgnoreCase(valueOP) ? valueRecord.getStruct(BEFORE) : valueRecord.getStruct(AFTER),
+                record.topic(),
+                record.kafkaPartition(),
+                record.kafkaOffset(),
+                valueOP,
+                LocalDateTime.now(ZoneOffset.UTC)
             );
 
-            logger.trace("Added record to buffer: {} with operation {}", recordToSnowflake, valueOP);
+            LOGGER.trace("Added record to buffer: {} with operation {}", recordToSnowflake, valueOP);
             buffer.put(convertPKToStringKey(record), recordToSnowflake);
         }
     }
 
     private boolean validate(SinkRecord record) {
         if (record.keySchema() == null || record.valueSchema() == null ||
-                !(record.key() instanceof Struct) || !(record.value() instanceof Struct)) {
-            logger.error("Key and value must be Structs with schemas. Key: {}, Value: {}", record.key(), record.value());
+            !(record.key() instanceof Struct) || !(record.value() instanceof Struct)) {
+            LOGGER.error("Key and value must be Structs with schemas. Key: {}, Value: {}", record.key(), record.value());
             return false;
         }
 
         if (record.topic() == null || record.kafkaPartition() == null) {
-            logger.error("Null values for topic or kafkaPartition. Topic {}, KafkaPartition {}", record.topic(),
-                    record.kafkaPartition());
+            LOGGER.error("Null values for topic or kafkaPartition. Topic {}, KafkaPartition {}", record.topic(),
+                record.kafkaPartition());
             return false;
         }
 
@@ -106,8 +123,8 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
         var destFileName = UUID.randomUUID().toString();
         try {
-            logger.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName,
-                    tableName);
+            LOGGER.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName,
+                tableName);
 
             var columnsFromMetadata = snapshotRecords ? columnsFinalTable : columnsIngestTable;
             var blockID = UUID.randomUUID().toString();
@@ -117,9 +134,9 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
                 var startTimeUpload = System.currentTimeMillis();
                 snowflakeConnection.uploadStream(stageName, "/", inputStream,
-                        destFileName, true);
+                    destFileName, true);
                 var endTimeUpload = System.currentTimeMillis();
-                logger.debug("Uploaded {} records in {} ms", buffer.size(), endTimeUpload - startTimeUpload);
+                LOGGER.debug("Uploaded {} records in {} ms", buffer.size(), endTimeUpload - startTimeUpload);
 
                 var startTimeStatement = System.currentTimeMillis();
                 try (var stmt = connection.createStatement()) {
@@ -128,64 +145,64 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
                         //copy everything to ingest
                         String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", tableName, String.join(",", columnsFromMetadata),
-                                stageName, destFileName);
-                        logger.debug("Copying statement to final table: {}", copyInto);
+                            stageName, destFileName);
+                        LOGGER.debug("Copying statement to final table: {}", copyInto);
                         stmt.executeUpdate(copyInto);
 
                     } else {
 
                         //copy everything to ingest
                         String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", ingestTableName, String.join(",", columnsFromMetadata),
-                                stageName, destFileName);
-                        logger.debug("Copying statement to ingest table: {}", copyInto);
+                            stageName, destFileName);
+                        LOGGER.debug("Copying statement to ingest table: {}", copyInto);
                         stmt.executeUpdate(copyInto);
 
 
                         if (flushHasInsertedRecords) {
                             //insert in final table
                             String insertIntoFinalTable = String.format(
-                                    "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'c'",
-                                    tableName, buildExcludeColumns(), ingestTableName, blockID);
-                            logger.debug("Inserting statement to final table: {}", insertIntoFinalTable);
+                                "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'c'",
+                                tableName, buildExcludeColumns(), ingestTableName, blockID);
+                            LOGGER.debug("Inserting statement to final table: {}", insertIntoFinalTable);
                             stmt.executeUpdate(insertIntoFinalTable);
                         }
 
                         //delete from final table
                         if (flushHasDeletedRecords) {
                             String deleteFromFinalTable = String.format(
-                                    "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE ih_blockid = '%s' and ih_op = 'd') AS ingest WHERE %s",
-                                    tableName, String.join(",", pks), ingestTableName, blockID,
-                                    buildPkWhereClause(pks));
-                            logger.debug("Deleting statement from final table: {}", deleteFromFinalTable);
+                                "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE ih_blockid = '%s' and ih_op = 'd') AS ingest WHERE %s",
+                                tableName, String.join(",", pks), ingestTableName, blockID,
+                                buildPkWhereClause(pks));
+                            LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
                             stmt.executeUpdate(deleteFromFinalTable);
                         }
 
                         if (flushHasUpdatedRecords) {
                             //update in final table
                             String updateFinalTable = String.format(
-                                    "UPDATE %s as final SET %s FROM (SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'u') AS ingest WHERE %s",
-                                    tableName, buildUpdateColumns(), buildExcludeColumns(), ingestTableName, blockID,
-                                    buildPkWhereClause(pks));
-                            logger.debug("Updating statement to final table: {}", updateFinalTable);
+                                "UPDATE %s as final SET %s FROM (SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'u') AS ingest WHERE %s",
+                                tableName, buildUpdateColumns(), buildExcludeColumns(), ingestTableName, blockID,
+                                buildPkWhereClause(pks));
+                            LOGGER.debug("Updating statement to final table: {}", updateFinalTable);
                             stmt.executeUpdate(updateFinalTable);
                         }
                     }
                     var endTimeStatement = System.currentTimeMillis();
-                    logger.debug("Executed statement in {} ms", endTimeStatement - startTimeStatement);
+                    LOGGER.debug("Executed statement in {} ms", endTimeStatement - startTimeStatement);
 
                 } catch (SQLException e) {
                     throw new RuntimeException("Error executing operations", e);
                 }
             }
             var endTimeMain = System.currentTimeMillis();
-            logger.debug("Process records took {} ms", endTimeMain - startTimeMain);
+            LOGGER.debug("Process records took {} ms", endTimeMain - startTimeMain);
 
         } catch (Throwable e) {
-            logger.error("Error while flushing Snowflake connector", e);
+            LOGGER.error("Error while flushing Snowflake connector", e);
             throw new RuntimeException("Error while flushing", e);
         } finally {
             var endTime = System.currentTimeMillis();
-            logger.debug("Flushed {} records in {} ms", buffer.size(), endTime - startTime);
+            LOGGER.debug("Flushed {} records in {} ms", buffer.size(), endTime - startTime);
             buffer.clear();
         }
     }
@@ -196,41 +213,40 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
             try {
                 scheduler.shutdown();
             } catch (SchedulerException e) {
-                logger.error("Can not shutdown quartz scheduler", e);
+                LOGGER.error("Can not shutdown quartz scheduler", e);
             }
         }
     }
 
-    private void startCleanUpJob(AbstractConfig config) throws SchedulerException {
+    protected void startCleanUpJob(AbstractConfig config) throws SchedulerException {
 
         var disableCleanUpJob = config.getBoolean(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DISABLE);
 
         if (disableCleanUpJob) {
-            logger.warn("Cleanup job is disabled, skipping job creation.");
+            LOGGER.warn("Cleanup job is disabled, skipping job creation.");
             return;
         }
 
-        var intervalHoursCleanup = config.getInt(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
+        var durationCleanup = Duration.parse(config.getString(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DURATION));
+        LOGGER.info("Cleanup job will run every {} seconds", durationCleanup.toSeconds());
 
         // job quartz config
         var jobData = new HashMap<String, Object>();
         jobData.put(CleanupJob.SNOWFLAKE_CONNECTION, connection);
         jobData.put(CleanupJob.INGEST_TABLE_NAME, ingestTableName);
-        jobData.put(CleanupJob.CLEANUP_HOURS, intervalHoursCleanup);
 
-        var uuid = UUID.randomUUID().toString();
         var props = new Properties();
-        props.setProperty(StdSchedulerFactory.PROP_SCHED_INSTANCE_NAME, "cleanup_" + uuid);
+        props.setProperty(StdSchedulerFactory.PROP_SCHED_INSTANCE_NAME, "cleanup_" + UUID.randomUUID());
         props.setProperty("org.quartz.threadPool.threadCount", "1");
 
         var schedulerFactory = new StdSchedulerFactory(props);
         scheduler = schedulerFactory.getScheduler();
         var job = JobBuilder.newJob(CleanupJob.class).withIdentity("cleanupjob")
-                .setJobData(new JobDataMap(jobData))
-                .build();
+            .setJobData(new JobDataMap(jobData))
+            .build();
         var trigger = TriggerBuilder.newTrigger().withIdentity("trigger_cleanupjob")
-                .withSchedule(SimpleScheduleBuilder.repeatHourlyForever(intervalHoursCleanup))
-                .build();
+            .withSchedule(SimpleScheduleBuilder.repeatSecondlyForever((int) durationCleanup.getSeconds()))
+            .build();
         scheduler.scheduleJob(job, trigger);
         scheduler.start();
     }
@@ -252,7 +268,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
         for (String pk : pks) {
             var value = keyStruct.get(pk);
             if (value == null) {
-                logger.error("Value for field '{}' is null in record: {}", pk, record);
+                LOGGER.error("Value for field '{}' is null in record: {}", pk, record);
                 throw new InvalidStructException("Value for field '" + pk + "' is null");
             }
             pkValues.add(value.toString());
@@ -277,11 +293,11 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
     private String buildPkWhereClause(List<String> pks) {
         return pks.stream()
-                .map(col -> String.format("%s.%s = %s.%s", "final", col, "ingest", col))
-                .reduce((a, b) -> a + " and " + b).orElseThrow();
+            .map(col -> String.format("%s.%s = %s.%s", "final", col, "ingest", col))
+            .reduce((a, b) -> a + " and " + b).orElseThrow();
     }
 
-    private ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(String blockID, List<String> columnsFromTable) throws Throwable {
+    protected ByteArrayOutputStream prepareOrderedColumnsBasedOnTargetTable(String blockID, List<String> columnsFromTable) throws Throwable {
 
         var startTime = System.currentTimeMillis();
         var csvInMemory = new ByteArrayOutputStream();
@@ -331,15 +347,15 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                 } else {
                     Object valueFromRecord = recordInBuffer.event().get(columnFromSnowflakeTable);
                     if (valueFromRecord != null) {
-                        if (containsAny(columnFromSnowflakeTable, timeFieldsConvert)) {
+                        if (containsAny(columnFromSnowflakeTable, timestampFieldsConvert)) {
                             var valueFromRecordAsLong = (long) valueFromRecord;
                             valueFromRecord = LocalDateTime.ofInstant(Instant.ofEpochMilli(valueFromRecordAsLong),
-                                    TimeZone.getDefault().toZoneId()).toString();
+                                TimeZone.getDefault().toZoneId()).toString();
                         } else if (containsAny(columnFromSnowflakeTable, dateFieldsConvert)) {
                             var valueFromRecordAsLong = (long) valueFromRecord;
                             var daysInSeconds = valueFromRecordAsLong * 24 * 60 * 60;
                             valueFromRecord = LocalDate.ofInstant(Instant.ofEpochSecond(daysInSeconds),
-                                    TimeZone.getDefault().toZoneId()).toString();
+                                TimeZone.getDefault().toZoneId()).toString();
                         } else if (containsAny(columnFromSnowflakeTable, timeFieldsConvert)) {
                             var valueFromRecordAsLong = (long) valueFromRecord;
                             valueFromRecord = LocalTime.ofNanoOfDay(valueFromRecordAsLong).toString();
@@ -350,7 +366,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                         stringBuilder.append(strBuffer);
 
                     } else {
-                        logger.warn("Column {} not found on buffer, inserted empty value", columnFromSnowflakeTable);
+                        LOGGER.warn("Column {} not found on buffer, inserted empty value", columnFromSnowflakeTable);
                     }
                 }
 
@@ -363,8 +379,8 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
 
             stringBuilder.append("\n");
-            if (!loggedDebugForFirstLine && logger.isDebugEnabled()) {
-                logger.debug("First lines of csv: {}", stringBuilder);
+            if (!loggedDebugForFirstLine && LOGGER.isDebugEnabled()) {
+                LOGGER.debug("First lines of csv: {}", stringBuilder);
                 loggedDebugForFirstLine = true;
             }
         }
@@ -373,7 +389,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
             csvInMemory.write(stringBuilder.toString().getBytes(StandardCharsets.UTF_8));
         }
         var endTime = System.currentTimeMillis();
-        logger.debug("Prepared csv in memory in {} ms", endTime - startTime);
+        LOGGER.debug("Prepared csv in memory in {} ms", endTime - startTime);
         return csvInMemory;
     }
 
