@@ -11,7 +11,7 @@ help:
 	@echo "delete-debezium-connector - Delete Debezium SQL Server connector"
 	@echo "create-snowflake-connector - Create Snowflake connector to ingest data on Snowflake"
 	@echo "delete-snowflake-connector - Delete Snowflake connector"
-	@echo "clean-data - Clean up the project data folders"
+	@echo "clean - Clean up the project data folders"
 	@echo "help - Show this help"
 
 .PHONY: start
@@ -27,8 +27,10 @@ start:
 	@kubectl apply -f ./infra/k8s/kconnect_cluster.yaml
 
 .PHONY: stop
-stop:
+stop: delete-debezium-connector delete-snowflake-connector
 	docker compose -f ./infra/docker-compose.yaml down --remove-orphans
+	kubectl delete -f ./infra/k8s/kconnect_cluster.yaml -n strimzi
+	kubectl delete -f ./infra/k8s/strimzi-cluster-operator-0.43.0.yaml -n strimzi
 
 .PHONY: init-sqlserver
 init-sqlserver:
@@ -59,7 +61,7 @@ delete-debezium-connector:
 delete-snowflake-connector:
 	kubectl delete -f ./infra/k8s/connectors/sink-snowflake.yaml -n strimzi
 
-.PHONY: clean-data
+.PHONY: clean
 clean-data:
 	@echo "Cleaning up the project data folders..."
 	@rm -rf infra/data/*

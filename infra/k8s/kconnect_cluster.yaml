@@ -84,6 +84,6 @@ spec:
           - type: jar
             url: https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.21.0/snowflake-jdbc-3.21.0.jar
           - type: jar
-            url: https://github.com/datastreambrasil/snowflake-sink-connector/releases/download/v3.4.0/snowflake-sink-connector-3.4.0-jar-with-dependencies.jar
+            url: https://github.com/datastreambrasil/snowflake-sink-connector/releases/download/v3.4.6/snowflake-sink-connector-3.4.6.jar
           - type: jar
             url: https://github.com/datastreambrasil/smt/releases/download/v1.0.2/smt-1.0.2.jar

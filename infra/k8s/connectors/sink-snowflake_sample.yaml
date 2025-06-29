@@ -8,7 +8,7 @@ spec:
   autoRestart:
     enabled: true
   class: br.com.datastreambrasil.v3.SnowflakeSinkConnector
-  tasksMax: 1
+  tasksMax: 6
   config:
     topics: "cdc.test.dbo.events"
     url: "jdbc:snowflake://xxxxxx.snowflakecomputing.com?schema=LZ_IH&db=DATB200D&CLIENT_SESSION_KEEP_ALIVE=TRUE"
@@ -23,3 +23,4 @@ spec:
     value.converter: "io.confluent.connect.avro.AvroConverter"
     value.converter.schema.registry.url: "http://host.minikube.internal:8085"
     value.converter.schemas.enable: true
+    job_cleanup_duration: "PT3M"

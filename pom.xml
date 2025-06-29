@@ -6,7 +6,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>br.com.datastreambrasil</groupId>
     <artifactId>snowflake-sink-connector</artifactId>
-    <version>3.4.0</version>
+    <version>3.4.6</version>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -91,19 +91,13 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.7.1</version>
-                <configuration>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                </configuration>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
                 <executions>
                     <execution>
-                        <id>assemble-all</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>single</goal>
+                            <goal>shade</goal>
                         </goals>
                     </execution>
                 </executions>

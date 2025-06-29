@@ -104,9 +104,8 @@ public class SnowflakeSinkConnector extends SinkConnector {
         final List<Map<String, String>> configs = new ArrayList<>(maxTasks);
         for (int i = 0; i < maxTasks; ++i) {
             var propsTask = new java.util.HashMap<>(props);
-            propsTask.put(CFG_JOB_CLEANUP_DISABLE, "true");
-            if (i == 0) {
-                propsTask.put(CFG_JOB_CLEANUP_DISABLE, props.get(CFG_JOB_CLEANUP_DISABLE));
+            if (i > 0) {
+                propsTask.put(CFG_JOB_CLEANUP_DISABLE, "true");
             }
 
             configs.add(propsTask);
