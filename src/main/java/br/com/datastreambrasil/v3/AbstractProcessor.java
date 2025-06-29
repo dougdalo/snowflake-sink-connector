@@ -21,7 +21,7 @@ import java.util.Properties;
 
 public abstract class AbstractProcessor {
 
-    protected final static Logger LOGGER = LogManager.getLogger();
+    protected final static Logger LOGGER = LogManager.getLogger(AbstractProcessor.class);
 
     protected Connection connection;
     protected SnowflakeConnection snowflakeConnection;
@@ -67,8 +67,8 @@ public abstract class AbstractProcessor {
 
     protected void start(AbstractConfig config) {
         configParameters(config);
-        configMetadata();
         setupSnowflakeConnection(config);
+        configMetadata();
         extraConfigsOnStart(config);
     }
 

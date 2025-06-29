@@ -15,11 +15,12 @@ services:
       - zookeeper
     ports:
       - "9092:9092"
+      - "9093:9093"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,PLAINTEXT_HOST_MINIKUBE:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092,PLAINTEXT_HOST_MINIKUBE://host.minikube.internal:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
@@ -41,39 +42,6 @@ services:
       SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8085"
     ports:
       - 8085:8085
-
-  kconnect:
-    image: confluentinc/cp-kafka-connect:7.9.1
-    ports:
-      - 8083:8083 #rest
-      - 9999:9999 #jmx
-      - 5005:5005 #debug
-    environment:
-      - CONNECT_BOOTSTRAP_SERVERS=broker:29092
-      - CONNECT_GROUP_ID=kconnect
-      - CONNECT_PLUGIN_PATH=/plugins
-      - CONNECT_CLIENT_ID=kconnect
-      - CONNECT_CONFIG_STORAGE_TOPIC=_kconnect-configs
-      - CONNECT_OFFSET_STORAGE_TOPIC=_kconnect-offsets
-      - CONNECT_STATUS_STORAGE_TOPIC=_kconnect-status
-      - CONNECT_REST_ADVERTISED_HOST_NAME=kconnect
-      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
-      - CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR=1
-      - CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR=1
-      - CONNECT_STATUS_STORAGE_REPLICATION_FACTOR=1
-      - CONNECT_PRODUCER_COMPRESSION_TYPE=lz4
-      - CONNECT_CONSUMER_FETCH_MIN_BYTES=10000
-      - CONNECT_CONSUMER_MAX_POLL_INTERVAL_MS=1800000
-      - CONNECT_OFFSET_FLUSH_TIMEOUT_MS=600000
-      - TZ=America/Sao_Paulo
-      - KAFKA_OPTS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
-      - CONNECT_KEY_CONVERTER=org.apache.kafka.connect.storage.StringConverter
-      - CONNECT_VALUE_CONVERTER=org.apache.kafka.connect.storage.StringConverter
-      - KAFKA_JMX_OPTS=-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=kconnect -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.port=9999
-    volumes:
-      - "./plugins:/plugins/"
-    depends_on:
-      - broker
 
   akhq:
     image: tchiotludo/akhq:0.25.0

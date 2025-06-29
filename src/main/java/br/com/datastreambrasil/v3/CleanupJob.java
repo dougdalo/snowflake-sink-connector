@@ -10,10 +10,9 @@ import java.sql.SQLException;
 
 public class CleanupJob implements Job {
 
-    private static final Logger LOGGER = LogManager.getLogger();
+    private static final Logger LOGGER = LogManager.getLogger(CleanupJob.class);
 
     protected static final String INGEST_TABLE_NAME = "ingest_table_name";
-    protected static final String CLEANUP_DURATION = "cleanup_hours";
     protected static final String SNOWFLAKE_CONNECTION = "snowflake_connection";
 
     @Override

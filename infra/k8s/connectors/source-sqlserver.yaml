@@ -1,0 +1,32 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnector
+metadata:
+  name: source-sqlserver
+  labels:
+    strimzi.io/cluster: kconnect
+spec:
+  autoRestart:
+    enabled: true
+  class: io.debezium.connector.sqlserver.SqlServerConnector
+  tasksMax: 1
+  config:
+    database.hostname: "host.minikube.internal"
+    database.port: "1433"
+    database.user: "sa"
+    database.password: "Password123!"
+    database.names: "test"
+    database.encrypt: false
+    topic.prefix: "cdc"
+    table.include.list: "dbo.events"
+    decimal.handling.mode: "string"
+    snapshot.isolation.mode: "READ_UNCOMMITTED"
+    tombstones.on.delete: false
+    schema.history.internal.kafka.bootstrap.servers: host.minikube.internal:9093
+    schema.history.internal.kafka.topic: "cdc-history"
+    driver.sendStringParametersAsUnicode: "false"
+    key.converter: "io.confluent.connect.avro.AvroConverter"
+    key.converter.schema.registry.url: "http://host.minikube.internal:8085"
+    key.converter.schemas.enable: true
+    value.converter: "io.confluent.connect.avro.AvroConverter"
+    value.converter.schema.registry.url: "http://host.minikube.internal:8085"
+    value.converter.schemas.enable: true

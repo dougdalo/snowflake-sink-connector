@@ -11,17 +11,26 @@ help:
 	@echo "delete-debezium-connector - Delete Debezium SQL Server connector"
 	@echo "create-snowflake-connector - Create Snowflake connector to ingest data on Snowflake"
 	@echo "delete-snowflake-connector - Delete Snowflake connector"
-	@echo "clean-data - Clean up the project data folders"
+	@echo "clean - Clean up the project data folders"
 	@echo "help - Show this help"
 
 .PHONY: start
 start:
-	mkdir -p data/sqlserver data/kafka data/zoo
-	docker compose -f ./infra/docker-compose.yaml up -d
+	@mkdir -p data/sqlserver data/kafka data/zoo
+	@echo "Starting the Docker Compose..."
+	@docker compose -f ./infra/docker-compose.yaml up -d
+	@kubectl create ns strimzi || true
+	kubectl apply -f ./infra/k8s/strimzi-cluster-operator-0.43.0.yaml -n strimzi || true
+	@echo "Waiting for Strimzi Cluster Operator to be ready using k8s..."
+	@kubectl wait --for=condition=Ready pod -l name=strimzi-cluster-operator -n strimzi --timeout=120s
+	@echo "Installing Strimzi Kafka Connect Cluster using K8s..."
+	@kubectl apply -f ./infra/k8s/kconnect_cluster.yaml
 
 .PHONY: stop
-stop:
+stop: delete-debezium-connector delete-snowflake-connector
 	docker compose -f ./infra/docker-compose.yaml down --remove-orphans
+	kubectl delete -f ./infra/k8s/kconnect_cluster.yaml -n strimzi
+	kubectl delete -f ./infra/k8s/strimzi-cluster-operator-0.43.0.yaml -n strimzi
 
 .PHONY: init-sqlserver
 init-sqlserver:
@@ -38,21 +47,21 @@ clean-sqlserver:
 
 .PHONY: create-debezium-connector
 create-debezium-connector:
-	curl -v -X POST -H "Content-Type: application/json" --data @./infra/debezium.json http://localhost:8083/connectors | jq
+	kubectl apply -f ./infra/k8s/connectors/source-sqlserver.yaml -n strimzi
 
 .PHONY: create-snowflake-connector
 create-snowflake-connector:
-	curl -v -X POST -H "Content-Type: application/json" --data @./infra/snowflake.json http://localhost:8083/connectors | jq
+	kubectl apply -f ./infra/k8s/connectors/sink-snowflake.yaml -n strimzi
 
 .PHONY: delete-debezium-connector
 delete-debezium-connector:
-	curl -v -X DELETE http://localhost:8083/connectors/dbz-sqlserver | jq
+	kubectl delete -f ./infra/k8s/connectors/source-sqlserver.yaml -n strimzi
 
 .PHONY: delete-snowflake-connector
 delete-snowflake-connector:
-	curl -v -X DELETE http://localhost:8083/connectors/snowflake | jq
+	kubectl delete -f ./infra/k8s/connectors/sink-snowflake.yaml -n strimzi
 
-.PHONY: clean-data
+.PHONY: clean
 clean-data:
 	@echo "Cleaning up the project data folders..."
 	@rm -rf infra/data/*

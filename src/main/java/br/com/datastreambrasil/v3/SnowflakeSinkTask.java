@@ -21,7 +21,7 @@ public class SnowflakeSinkTask extends SinkTask {
     @Override
     public void start(Map<String, String> map) {
         AbstractConfig config = new AbstractConfig(SnowflakeSinkConnector.CONFIG_DEF, map);
-
+        
         switch (config.getString(SnowflakeSinkConnector.CFG_PROFILE)) {
             case "cdc_schema":
                 processor = new CdcDbzSchemaProcessor();

@@ -1,0 +1,89 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnect
+metadata:
+  name: kconnect
+  annotations:
+    strimzi.io/use-connector-resources: "true"
+  labels:
+    strimzi.io/cluster: kconnect
+
+spec:
+  version: 3.7.1
+  replicas: 1
+  bootstrapServers: host.minikube.internal:9093
+
+  logging:
+    type: inline
+    loggers:
+      connect.root.logger.level: INFO
+      log4j.logger.br.com.datastreambrasil.v3: DEBUG
+
+  config:
+    # default config [strimzi]
+    key.converter: org.apache.kafka.connect.json.JsonConverter
+    value.converter: org.apache.kafka.connect.json.JsonConverter
+    key.converter.schemas.enable: false
+    value.converter.schemas.enable: false
+    internal.key.converter: org.apache.kafka.connect.json.JsonConverter
+    internal.value.converter: org.apache.kafka.connect.json.JsonConverter
+    internal.key.converter.schemas.enable: false
+    internal.value.converter.schemas.enable: false
+
+    # config connect cluster
+    group.id: connect-cluster-v2
+    offset.storage.topic: connect-cluster-offsets-v2
+    config.storage.topic: connect-cluster-configs-v2
+    status.storage.topic: connect-cluster-status-v2
+    config.storage.replication.factor: -1
+    offset.storage.replication.factor: -1
+    status.storage.replication.factor: -1
+
+    # config producer
+    producer.compression.type: lz4
+    producer.linger.ms: 50
+    producer.acks: 1
+
+    # config consumer
+    consumer.auto.offset.reset: earliest
+    # read external secrets
+    config.providers: secrets
+    config.providers.secrets.class: io.strimzi.kafka.KubernetesSecretConfigProvider
+
+  # plugins
+  build:
+    output:
+      type: docker
+      image: ttl.sh/strimzi:1h
+    plugins:
+      - name: jars-for-avro
+        artifacts:
+          - type: jar
+            url: https://packages.confluent.io/maven/io/confluent/kafka-connect-avro-converter/7.9.1/kafka-connect-avro-converter-7.9.1.jar
+          - type: jar
+            url: https://packages.confluent.io/maven/io/confluent/kafka-connect-avro-data/7.9.1/kafka-connect-avro-data-7.9.1.jar
+          - type: jar
+            url: https://packages.confluent.io/maven/io/confluent/kafka-avro-serializer/7.9.1/kafka-avro-serializer-7.9.1.jar
+          - type: jar
+            url: https://packages.confluent.io/maven/io/confluent/kafka-schema-registry-client/7.9.1/kafka-schema-registry-client-7.9.1.jar
+          - type: jar
+            url: https://packages.confluent.io/maven/io/confluent/kafka-schema-serializer/7.9.1/kafka-schema-serializer-7.9.1.jar
+          - type: jar
+            url: https://packages.confluent.io/maven/io/confluent/kafka-schema-converter/7.9.1/kafka-schema-converter-7.9.1.jar
+          - type: jar
+            url: https://packages.confluent.io/maven/io/confluent/common-config/7.9.1/common-config-7.9.1.jar
+          - type: jar
+            url: https://packages.confluent.io/maven/io/confluent/common-utils/7.9.1/common-utils-7.9.1.jar
+          - type: jar
+            url: https://repo1.maven.org/maven2/org/apache/avro/avro/1.12.0/avro-1.12.0.jar
+      - name: debezium-sqlserver-connector
+        artifacts:
+          - type: tgz
+            url: https://repo1.maven.org/maven2/io/debezium/debezium-connector-sqlserver/2.7.0.Final/debezium-connector-sqlserver-2.7.0.Final-plugin.tar.gz
+      - name: snowflake-sink-connector-v3
+        artifacts:
+          - type: jar
+            url: https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.21.0/snowflake-jdbc-3.21.0.jar
+          - type: jar
+            url: https://github.com/datastreambrasil/snowflake-sink-connector/releases/download/v3.4.6/snowflake-sink-connector-3.4.6.jar
+          - type: jar
+            url: https://github.com/datastreambrasil/smt/releases/download/v1.0.2/smt-1.0.2.jar
