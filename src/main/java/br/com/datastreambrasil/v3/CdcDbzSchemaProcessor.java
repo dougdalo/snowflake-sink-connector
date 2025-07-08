@@ -141,52 +141,42 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                 var startTimeStatement = System.currentTimeMillis();
                 try (var stmt = connection.createStatement()) {
 
-                    if (snapshotRecords) {
-
-                        //copy everything to ingest
-                        String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", tableName, String.join(",", columnsFromMetadata),
-                            stageName, destFileName);
-                        LOGGER.debug("Copying statement to final table: {}", copyInto);
-                        stmt.executeUpdate(copyInto);
-
-                    } else {
-
-                        //copy everything to ingest
-                        String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", ingestTableName, String.join(",", columnsFromMetadata),
-                            stageName, destFileName);
-                        LOGGER.debug("Copying statement to ingest table: {}", copyInto);
-                        stmt.executeUpdate(copyInto);
+                    //copy everything to ingest
+                    String copyInto = String.format("COPY INTO %s (%s) FROM @%s/%s.gz PURGE = TRUE", ingestTableName, String.join(",", columnsFromMetadata),
+                        stageName, destFileName);
+                    LOGGER.debug("Copying statement to ingest table: {}", copyInto);
+                    stmt.executeUpdate(copyInto);
 
 
-                        if (flushHasInsertedRecords) {
-                            //insert in final table
-                            String insertIntoFinalTable = String.format(
-                                "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'c'",
-                                tableName, buildExcludeColumns(), ingestTableName, blockID);
-                            LOGGER.debug("Inserting statement to final table: {}", insertIntoFinalTable);
-                            stmt.executeUpdate(insertIntoFinalTable);
-                        }
-
-                        //delete from final table
-                        if (flushHasDeletedRecords) {
-                            String deleteFromFinalTable = String.format(
-                                "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE ih_blockid = '%s' and ih_op = 'd') AS ingest WHERE %s",
-                                tableName, String.join(",", pks), ingestTableName, blockID,
-                                buildPkWhereClause(pks));
-                            LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
-                            stmt.executeUpdate(deleteFromFinalTable);
-                        }
-
-                        if (flushHasUpdatedRecords) {
-                            //update in final table
-                            String updateFinalTable = String.format(
-                                "UPDATE %s as final SET %s FROM (SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'u') AS ingest WHERE %s",
-                                tableName, buildUpdateColumns(), buildExcludeColumns(), ingestTableName, blockID,
-                                buildPkWhereClause(pks));
-                            LOGGER.debug("Updating statement to final table: {}", updateFinalTable);
-                            stmt.executeUpdate(updateFinalTable);
-                        }
+                    if (flushHasInsertedRecords || snapshotRecords) {
+                        //insert in final table
+                        String insertIntoFinalTable = String.format(
+                            "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op in ('c', 'r')",
+                            tableName, buildExcludeColumns(), ingestTableName, blockID);
+                        LOGGER.debug("Inserting statement to final table: {}", insertIntoFinalTable);
+                        stmt.executeUpdate(insertIntoFinalTable);
                     }
+
+                    //delete from final table
+                    if (flushHasDeletedRecords) {
+                        String deleteFromFinalTable = String.format(
+                            "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE ih_blockid = '%s' and ih_op = 'd') AS ingest WHERE %s",
+                            tableName, String.join(",", pks), ingestTableName, blockID,
+                            buildPkWhereClause(pks));
+                        LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
+                        stmt.executeUpdate(deleteFromFinalTable);
+                    }
+
+                    if (flushHasUpdatedRecords) {
+                        //update in final table
+                        String updateFinalTable = String.format(
+                            "UPDATE %s as final SET %s FROM (SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op = 'u') AS ingest WHERE %s",
+                            tableName, buildUpdateColumns(), buildExcludeColumns(), ingestTableName, blockID,
+                            buildPkWhereClause(pks));
+                        LOGGER.debug("Updating statement to final table: {}", updateFinalTable);
+                        stmt.executeUpdate(updateFinalTable);
+                    }
+
                     var endTimeStatement = System.currentTimeMillis();
                     LOGGER.debug("Executed statement in {} ms", endTimeStatement - startTimeStatement);
 
