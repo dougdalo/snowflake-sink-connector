@@ -43,7 +43,6 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
     private Scheduler scheduler;
     private List<String> pks = new ArrayList<>();
-    private boolean snapshotRecords = true;
     private boolean flushHasDeletedRecords;
     private boolean flushHasInsertedRecords;
     private boolean flushHasUpdatedRecords;
@@ -81,8 +80,6 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                 throw new InvalidStructException("Value for field '" + OP + "' is null");
             }
 
-
-            snapshotRecords = debeziumOperation.r.toString().equalsIgnoreCase(valueOP);
 
             var recordToSnowflake = new SnowflakeRecord(
                 debeziumOperation.d.toString().equalsIgnoreCase(valueOP) ? valueRecord.getStruct(BEFORE) : valueRecord.getStruct(AFTER),
@@ -126,7 +123,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
             LOGGER.debug("Preparing to send {} records from buffer. To stage {} and table {}", buffer.size(), stageName,
                 tableName);
 
-            var columnsFromMetadata = snapshotRecords ? columnsFinalTable : columnsIngestTable;
+            var columnsFromMetadata = columnsIngestTable;
             var blockID = UUID.randomUUID().toString();
             var startTimeMain = System.currentTimeMillis();
             try (var csvToInsert = prepareOrderedColumnsBasedOnTargetTable(blockID, columnsFromMetadata);
@@ -148,7 +145,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                     stmt.executeUpdate(copyInto);
 
 
-                    if (flushHasInsertedRecords || snapshotRecords) {
+                    if (flushHasInsertedRecords) {
                         //insert in final table
                         String insertIntoFinalTable = String.format(
                             "INSERT INTO %s SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op in ('c', 'r')",
@@ -306,7 +303,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                 flushHasDeletedRecords = true;
             }
 
-            if (debeziumOperation.c.toString().equalsIgnoreCase(op)) {
+            if (debeziumOperation.c.toString().equalsIgnoreCase(op) || debeziumOperation.r.toString().equalsIgnoreCase(op)) {
                 flushHasInsertedRecords = true;
             }
 
@@ -342,7 +339,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                             valueFromRecord = LocalDateTime.ofInstant(Instant.ofEpochMilli(valueFromRecordAsLong),
                                 TimeZone.getDefault().toZoneId()).toString();
                         } else if (containsAny(columnFromSnowflakeTable, dateFieldsConvert)) {
-                            var valueFromRecordAsLong = (long) valueFromRecord;
+                            var valueFromRecordAsLong = (int) valueFromRecord;
                             var daysInSeconds = valueFromRecordAsLong * 24 * 60 * 60;
                             valueFromRecord = LocalDate.ofInstant(Instant.ofEpochSecond(daysInSeconds),
                                 TimeZone.getDefault().toZoneId()).toString();

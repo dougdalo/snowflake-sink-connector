@@ -57,7 +57,7 @@ class CdcDbzSchemaProcessorTest {
             .field("name", Schema.STRING_SCHEMA)
             .field("timestamp", Schema.OPTIONAL_INT64_SCHEMA)
             .field("time", Schema.OPTIONAL_INT64_SCHEMA)
-            .field("date", Schema.OPTIONAL_INT64_SCHEMA)
+            .field("date", Schema.OPTIONAL_INT32_SCHEMA)
             .field("desc", Schema.OPTIONAL_STRING_SCHEMA).build();
         valueSchema = SchemaBuilder.struct()
             .field("before", valueAfterBeforeSchema)
@@ -352,7 +352,7 @@ class CdcDbzSchemaProcessorTest {
                         .put("name", "Name " + id)
                         .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
                         .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
-                        .put("date", dt.getLong(ChronoField.EPOCH_DAY)))
+                        .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
                     .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
                 i
             ));
@@ -378,13 +378,13 @@ class CdcDbzSchemaProcessorTest {
                         .put("name", "Name " + id)
                         .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
                         .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
-                        .put("date", dt.getLong(ChronoField.EPOCH_DAY)))
+                        .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
                     .put("after", new Struct(valueAfterBeforeSchema)
                         .put("id", id)
                         .put("name", String.format("Name %s %s", nameSuffix, id))
                         .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
                         .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
-                        .put("date", dt.getLong(ChronoField.EPOCH_DAY)))
+                        .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
                     .put("op", CdcDbzSchemaProcessor.debeziumOperation.u.name()),
                 i
             ));
@@ -410,7 +410,7 @@ class CdcDbzSchemaProcessorTest {
                         .put("name", "Name " + id)
                         .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
                         .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
-                        .put("date", dt.getLong(ChronoField.EPOCH_DAY)))
+                        .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
                     .put("op", CdcDbzSchemaProcessor.debeziumOperation.d.name()),
                 i
             ));
