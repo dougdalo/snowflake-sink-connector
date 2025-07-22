@@ -227,9 +227,8 @@ class CdcDbzSchemaProcessorTest {
         processor.flush(null);
 
         verify(processor.snowflakeConnection, times(1)).uploadStream(any(), eq("/"), assertArg(c -> assertEquals(769, c.available(), "CSV data length should be 459 bytes")), any(), eq(true));
-        verify(statementMock, times(1)).executeUpdate(matches("INSERT.*"));
+        verify(statementMock, times(1)).executeUpdate(matches("MERGE.*"));
         verify(statementMock, times(1)).executeUpdate(matches("DELETE(.*)final.id = ingest.id"));
-        verify(statementMock, times(1)).executeUpdate(matches("UPDATE(.*)final.id = ingest.id"));
         verify(statementMock, times(1)).executeUpdate(matches("COPY.*"));
         assertEquals(0, processor.buffer.size(), "Buffer should be empty after flush");
     }
