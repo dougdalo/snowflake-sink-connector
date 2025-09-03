@@ -82,25 +82,25 @@ class CdcDbzSchemaProcessorTest {
 
         var itemIdx = "1";
         //assert item create
-        assertEquals(itemIdx, processor.buffer.get(itemIdx).event().get("id"));
-        assertEquals("Name " + itemIdx, processor.buffer.get(itemIdx).event().get("name"));
+        assertEquals(itemIdx, processor.buffer.get(itemIdx).event().get("Id"));
+        assertEquals("Name " + itemIdx, processor.buffer.get(itemIdx).event().get("Name"));
         assertEquals("c", processor.buffer.get(itemIdx).op());
 
         //assert item update
         itemIdx = "10";
-        assertEquals(itemIdx, processor.buffer.get(itemIdx).event().get("id"));
-        assertEquals("Name update 002 " + itemIdx, processor.buffer.get(itemIdx).event().get("name"));
+        assertEquals(itemIdx, processor.buffer.get(itemIdx).event().get("Id"));
+        assertEquals("Name update 002 " + itemIdx, processor.buffer.get(itemIdx).event().get("Name"));
         assertEquals("u", processor.buffer.get(itemIdx).op());
 
         //asert item delete
         itemIdx = "20";
-        assertEquals(itemIdx, processor.buffer.get(itemIdx).event().get("id"));
-        assertEquals("Name " + itemIdx, processor.buffer.get(itemIdx).event().get("name"));
+        assertEquals(itemIdx, processor.buffer.get(itemIdx).event().get("Id"));
+        assertEquals("Name " + itemIdx, processor.buffer.get(itemIdx).event().get("Name"));
         assertEquals("d", processor.buffer.get(itemIdx).op());
 
         itemIdx = "3";
-        assertEquals(itemIdx, processor.buffer.get(itemIdx).event().get("id"));
-        assertEquals("Name " + itemIdx, processor.buffer.get(itemIdx).event().get("name"));
+        assertEquals(itemIdx, processor.buffer.get(itemIdx).event().get("Id"));
+        assertEquals("Name " + itemIdx, processor.buffer.get(itemIdx).event().get("Name"));
         assertEquals("d", processor.buffer.get(itemIdx).op());
     }
 
@@ -129,8 +129,8 @@ class CdcDbzSchemaProcessorTest {
                 valueSchema,
                 new Struct(valueSchema)
                         .put("after", new Struct(valueAfterBeforeSchema)
-                                .put("id", "1")
-                                .put("name", "Name")
+                                .put("Id", "1")
+                                .put("Name", "Name")
                                 .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
                         .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
                 1
@@ -148,8 +148,8 @@ class CdcDbzSchemaProcessorTest {
                 valueSchema,
                 new Struct(valueSchema)
                         .put("after", new Struct(valueAfterBeforeSchema)
-                                .put("id", "1")
-                                .put("name", "Name")
+                                .put("Id", "1")
+                                .put("Name", "Name")
                                 .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
                         .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
                 1
@@ -171,8 +171,8 @@ class CdcDbzSchemaProcessorTest {
                 valueSchemaWithNoOpField,
                 new Struct(valueSchema)
                         .put("after", new Struct(valueAfterBeforeSchema)
-                                .put("id", "1")
-                                .put("name", "Name")
+                                .put("Id", "1")
+                                .put("Name", "Name")
                                 .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
                         .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
                 1
@@ -190,8 +190,8 @@ class CdcDbzSchemaProcessorTest {
                 valueSchema,
                 new Struct(valueSchema)
                         .put("after", new Struct(valueAfterBeforeSchema)
-                                .put("id", "1")
-                                .put("name", "Name")
+                                .put("Id", "1")
+                                .put("Name", "Name")
                                 .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli())),
                 1
         ))));
@@ -208,8 +208,8 @@ class CdcDbzSchemaProcessorTest {
                 valueSchema,
                 new Struct(valueSchema)
                         .put("after", new Struct(valueAfterBeforeSchema)
-                                .put("id", "1")
-                                .put("name", "Name")
+                                .put("Id", "1")
+                                .put("Name", "Name")
                                 .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
                         .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
                 1
@@ -373,14 +373,14 @@ class CdcDbzSchemaProcessorTest {
                     valueSchema,
                     new Struct(valueSchema)
                             .put("before", new Struct(valueAfterBeforeSchema)
-                                    .put("id", id)
-                                    .put("name", "Name " + id)
+                                    .put("Id", id)
+                                    .put("Name", "Name " + id)
                                     .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
                                     .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
                                     .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
                             .put("after", new Struct(valueAfterBeforeSchema)
-                                    .put("id", id)
-                                    .put("name", String.format("Name %s %s", nameSuffix, id))
+                                    .put("Id", id)
+                                    .put("Name", String.format("Name %s %s", nameSuffix, id))
                                     .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
                                     .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
                                     .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
