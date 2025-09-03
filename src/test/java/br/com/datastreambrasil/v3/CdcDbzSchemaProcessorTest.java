@@ -53,20 +53,20 @@ class CdcDbzSchemaProcessorTest {
     @BeforeAll
     static void beforeTest() {
         valueAfterBeforeSchema = SchemaBuilder.struct()
-            .field("id", Schema.STRING_SCHEMA)
-            .field("name", Schema.STRING_SCHEMA)
-            .field("timestamp", Schema.OPTIONAL_INT64_SCHEMA)
-            .field("time", Schema.OPTIONAL_INT64_SCHEMA)
-            .field("date", Schema.OPTIONAL_INT32_SCHEMA)
-            .field("desc", Schema.OPTIONAL_STRING_SCHEMA).build();
+                .field("Id", Schema.STRING_SCHEMA)
+                .field("Name", Schema.STRING_SCHEMA)
+                .field("timestamp", Schema.OPTIONAL_INT64_SCHEMA)
+                .field("time", Schema.OPTIONAL_INT64_SCHEMA)
+                .field("date", Schema.OPTIONAL_INT32_SCHEMA)
+                .field("desc", Schema.OPTIONAL_STRING_SCHEMA).build();
         valueSchema = SchemaBuilder.struct()
-            .field("before", valueAfterBeforeSchema)
-            .field("after", valueAfterBeforeSchema)
-            .field("op", Schema.STRING_SCHEMA)
-            .build();
+                .field("before", valueAfterBeforeSchema)
+                .field("after", valueAfterBeforeSchema)
+                .field("op", Schema.STRING_SCHEMA)
+                .build();
         keySchema = SchemaBuilder.struct()
-            .field("id", Schema.OPTIONAL_STRING_SCHEMA)
-            .build();
+                .field("id", Schema.OPTIONAL_STRING_SCHEMA)
+                .build();
     }
 
     @Test
@@ -108,13 +108,13 @@ class CdcDbzSchemaProcessorTest {
     void testPutFailWithInvalidValueSchema() {
         var processor = new CdcDbzSchemaProcessor();
         assertThrows(InvalidStructException.class, () -> processor.put(List.of(new SinkRecord(
-            "test_topic",
-            0,
-            keySchema,
-            new Struct(keySchema).put("id", "1"),
-            valueSchema,
-            "invalid_value", // This should be a Struct, but it's a String
-            1
+                "test_topic",
+                0,
+                keySchema,
+                new Struct(keySchema).put("id", "1"),
+                valueSchema,
+                "invalid_value", // This should be a Struct, but it's a String
+                1
         ))));
     }
 
@@ -122,18 +122,18 @@ class CdcDbzSchemaProcessorTest {
     void testPutFailWithInvalidTopic() {
         var processor = new CdcDbzSchemaProcessor();
         assertThrows(InvalidStructException.class, () -> processor.put(List.of(new SinkRecord(
-            null, // Invalid topic
-            0,
-            keySchema,
-            new Struct(keySchema).put("id", "1"),
-            valueSchema,
-            new Struct(valueSchema)
-                .put("after", new Struct(valueAfterBeforeSchema)
-                    .put("id", "1")
-                    .put("name", "Name")
-                    .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
-                .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
-            1
+                null, // Invalid topic
+                0,
+                keySchema,
+                new Struct(keySchema).put("id", "1"),
+                valueSchema,
+                new Struct(valueSchema)
+                        .put("after", new Struct(valueAfterBeforeSchema)
+                                .put("id", "1")
+                                .put("name", "Name")
+                                .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
+                        .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
+                1
         ))));
     }
 
@@ -141,41 +141,41 @@ class CdcDbzSchemaProcessorTest {
     void testPutFailWithInvalidKeySchema() {
         var processor = new CdcDbzSchemaProcessor();
         assertThrows(InvalidStructException.class, () -> processor.put(List.of(new SinkRecord(
-            "test_topic",
-            0,
-            keySchema,
-            "invalid_key", // This should be a Struct, but it's a String
-            valueSchema,
-            new Struct(valueSchema)
-                .put("after", new Struct(valueAfterBeforeSchema)
-                    .put("id", "1")
-                    .put("name", "Name")
-                    .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
-                .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
-            1
+                "test_topic",
+                0,
+                keySchema,
+                "invalid_key", // This should be a Struct, but it's a String
+                valueSchema,
+                new Struct(valueSchema)
+                        .put("after", new Struct(valueAfterBeforeSchema)
+                                .put("id", "1")
+                                .put("name", "Name")
+                                .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
+                        .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
+                1
         ))));
     }
 
     @Test
     void testPutFailWithFieldOpMissing() {
         var valueSchemaWithNoOpField = SchemaBuilder.struct()
-            .field("before", valueAfterBeforeSchema)
-            .field("after", valueAfterBeforeSchema)
-            .build();
+                .field("before", valueAfterBeforeSchema)
+                .field("after", valueAfterBeforeSchema)
+                .build();
         var processor = new CdcDbzSchemaProcessor();
         assertThrows(InvalidStructException.class, () -> processor.put(List.of(new SinkRecord(
-            "test_topic",
-            0,
-            keySchema,
-            new Struct(keySchema).put("id", "1"),
-            valueSchemaWithNoOpField,
-            new Struct(valueSchema)
-                .put("after", new Struct(valueAfterBeforeSchema)
-                    .put("id", "1")
-                    .put("name", "Name")
-                    .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
-                .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
-            1
+                "test_topic",
+                0,
+                keySchema,
+                new Struct(keySchema).put("id", "1"),
+                valueSchemaWithNoOpField,
+                new Struct(valueSchema)
+                        .put("after", new Struct(valueAfterBeforeSchema)
+                                .put("id", "1")
+                                .put("name", "Name")
+                                .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
+                        .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
+                1
         ))));
     }
 
@@ -183,17 +183,17 @@ class CdcDbzSchemaProcessorTest {
     void testPutFailWithValueOpMissing() {
         var processor = new CdcDbzSchemaProcessor();
         assertThrows(InvalidStructException.class, () -> processor.put(List.of(new SinkRecord(
-            "test_topic",
-            0,
-            keySchema,
-            new Struct(keySchema).put("id", "1"),
-            valueSchema,
-            new Struct(valueSchema)
-                .put("after", new Struct(valueAfterBeforeSchema)
-                    .put("id", "1")
-                    .put("name", "Name")
-                    .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli())),
-            1
+                "test_topic",
+                0,
+                keySchema,
+                new Struct(keySchema).put("id", "1"),
+                valueSchema,
+                new Struct(valueSchema)
+                        .put("after", new Struct(valueAfterBeforeSchema)
+                                .put("id", "1")
+                                .put("name", "Name")
+                                .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli())),
+                1
         ))));
     }
 
@@ -201,18 +201,18 @@ class CdcDbzSchemaProcessorTest {
     void testPutFailWithNullKey() {
         var processor = new CdcDbzSchemaProcessor();
         assertThrows(InvalidStructException.class, () -> processor.put(List.of(new SinkRecord(
-            "test_topic",
-            0,
-            keySchema,
-            new Struct(keySchema).put("id", null), // Key should not be null
-            valueSchema,
-            new Struct(valueSchema)
-                .put("after", new Struct(valueAfterBeforeSchema)
-                    .put("id", "1")
-                    .put("name", "Name")
-                    .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
-                .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
-            1
+                "test_topic",
+                0,
+                keySchema,
+                new Struct(keySchema).put("id", null), // Key should not be null
+                valueSchema,
+                new Struct(valueSchema)
+                        .put("after", new Struct(valueAfterBeforeSchema)
+                                .put("id", "1")
+                                .put("name", "Name")
+                                .put("timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()))
+                        .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
+                1
         ))));
     }
 
@@ -243,9 +243,9 @@ class CdcDbzSchemaProcessorTest {
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IHDATETIME));
         var pattern = Pattern.compile("""
-            "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","c","111",(?<msgtimestampc>.*)
-            "2","Name 2","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","d","111",(?<msgtimestampd>.*)
-            """);
+                "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","c","111",(?<msgtimestampc>.*)
+                "2","Name 2","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","d","111",(?<msgtimestampd>.*)
+                """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
     }
@@ -262,9 +262,9 @@ class CdcDbzSchemaProcessorTest {
 
     private Statement prepareToFlush(CdcDbzSchemaProcessor processor) throws SQLException {
         var statementMock = mockConnections(processor,
-            List.of("id", "name", "timestamp", "time", "date", "desc"),
-            List.of("id", "name", "timestamp", "time", "date", "desc", "ih_topic", "ih_offset", "ih_partition", "ih_op", "ih_datetime", "ih_blockid"),
-            "test_table", "test_table_INGEST");
+                List.of("id", "name", "timestamp", "time", "date", "desc"),
+                List.of("id", "name", "timestamp", "time", "date", "desc", "ih_topic", "ih_offset", "ih_partition", "ih_op", "ih_datetime", "ih_blockid"),
+                "test_table", "test_table_INGEST");
         processor.configParameters(generateConfig());
         processor.configMetadata();
         return statementMock;
@@ -272,12 +272,12 @@ class CdcDbzSchemaProcessorTest {
 
     private AbstractConfig generateConfig() {
         return new AbstractConfig(SnowflakeSinkConnector.CONFIG_DEF, Map.of(
-            "schema", "test_schema",
-            "table", "test_table",
-            "stage", "test_stage",
-            "timestamp_fields_convert", "timestamp",
-            "date_fields_convert", "date",
-            "time_fields_convert", "time"
+                "schema", "test_schema",
+                "table", "test_table",
+                "stage", "test_stage",
+                "timestamp_fields_convert", "timestamp",
+                "date_fields_convert", "date",
+                "time_fields_convert", "time"
         ));
     }
 
@@ -340,20 +340,20 @@ class CdcDbzSchemaProcessorTest {
         for (int i = 0; i < ids.length; i++) {
             var id = ids[i];
             records.add(new SinkRecord(
-                "test_topic",
-                0,
-                keySchema,
-                new Struct(keySchema).put("id", id),
-                valueSchema,
-                new Struct(valueSchema)
-                    .put("after", new Struct(valueAfterBeforeSchema)
-                        .put("id", id)
-                        .put("name", "Name " + id)
-                        .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
-                        .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
-                        .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
-                    .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
-                i
+                    "test_topic",
+                    0,
+                    keySchema,
+                    new Struct(keySchema).put("id", id),
+                    valueSchema,
+                    new Struct(valueSchema)
+                            .put("after", new Struct(valueAfterBeforeSchema)
+                                    .put("Id", id)
+                                    .put("Name", "Name " + id)
+                                    .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
+                                    .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
+                                    .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
+                            .put("op", CdcDbzSchemaProcessor.debeziumOperation.c.name()),
+                    i
             ));
         }
 
@@ -366,26 +366,26 @@ class CdcDbzSchemaProcessorTest {
         for (int i = 0; i < ids.length; i++) {
             var id = ids[i];
             records.add(new SinkRecord(
-                "test_topic",
-                0,
-                keySchema,
-                new Struct(keySchema).put("id", id),
-                valueSchema,
-                new Struct(valueSchema)
-                    .put("before", new Struct(valueAfterBeforeSchema)
-                        .put("id", id)
-                        .put("name", "Name " + id)
-                        .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
-                        .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
-                        .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
-                    .put("after", new Struct(valueAfterBeforeSchema)
-                        .put("id", id)
-                        .put("name", String.format("Name %s %s", nameSuffix, id))
-                        .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
-                        .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
-                        .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
-                    .put("op", CdcDbzSchemaProcessor.debeziumOperation.u.name()),
-                i
+                    "test_topic",
+                    0,
+                    keySchema,
+                    new Struct(keySchema).put("id", id),
+                    valueSchema,
+                    new Struct(valueSchema)
+                            .put("before", new Struct(valueAfterBeforeSchema)
+                                    .put("id", id)
+                                    .put("name", "Name " + id)
+                                    .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
+                                    .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
+                                    .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
+                            .put("after", new Struct(valueAfterBeforeSchema)
+                                    .put("id", id)
+                                    .put("name", String.format("Name %s %s", nameSuffix, id))
+                                    .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
+                                    .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
+                                    .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
+                            .put("op", CdcDbzSchemaProcessor.debeziumOperation.u.name()),
+                    i
             ));
         }
 
@@ -398,20 +398,20 @@ class CdcDbzSchemaProcessorTest {
         for (int i = 0; i < ids.length; i++) {
             var id = ids[i];
             records.add(new SinkRecord(
-                "test_topic",
-                0,
-                keySchema,
-                new Struct(keySchema).put("id", id),
-                valueSchema,
-                new Struct(valueSchema)
-                    .put("before", new Struct(valueAfterBeforeSchema)
-                        .put("id", id)
-                        .put("name", "Name " + id)
-                        .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
-                        .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
-                        .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
-                    .put("op", CdcDbzSchemaProcessor.debeziumOperation.d.name()),
-                i
+                    "test_topic",
+                    0,
+                    keySchema,
+                    new Struct(keySchema).put("id", id),
+                    valueSchema,
+                    new Struct(valueSchema)
+                            .put("before", new Struct(valueAfterBeforeSchema)
+                                    .put("Id", id)
+                                    .put("Name", "Name " + id)
+                                    .put("timestamp", dt.toInstant(ZoneOffset.UTC).toEpochMilli())
+                                    .put("time", dt.getLong(ChronoField.NANO_OF_DAY))
+                                    .put("date", (int) dt.getLong(ChronoField.EPOCH_DAY)))
+                            .put("op", CdcDbzSchemaProcessor.debeziumOperation.d.name()),
+                    i
             ));
         }
 
