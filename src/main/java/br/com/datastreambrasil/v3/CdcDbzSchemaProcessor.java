@@ -260,9 +260,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
     private String buildUpdateColumns() {
         var columns = new ArrayList<String>();
         for (String column : columnsFinalTable) {
-            if (!pks.contains(column)) {
-                columns.add(String.format("final.%s = ingest.%s", column, column));
-            }
+            columns.add(String.format("final.%s = ingest.%s", column, column));
         }
         return String.join(",", columns);
     }
