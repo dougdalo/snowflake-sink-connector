@@ -1,5 +1,6 @@
 package br.com.datastreambrasil.v3;
 
+import br.com.datastreambrasil.common.MetadataCache;
 import br.com.datastreambrasil.v3.model.SnowflakeRecord;
 import net.snowflake.client.jdbc.SnowflakeConnection;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -15,9 +16,11 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.stream.Collectors;
 
 public abstract class AbstractProcessor {
 
@@ -74,8 +77,8 @@ public abstract class AbstractProcessor {
 
     protected void configMetadata() {
         try {
-            columnsFinalTable = getColumnsFromMetadata(tableName);
-            columnsIngestTable = getColumnsFromMetadata(ingestTableName);
+            columnsFinalTable = resolveColumns(tableName);
+            columnsIngestTable = resolveColumns(ingestTableName);
         } catch (SQLException e) {
             LOGGER.error("Error while get metadata columns from snowflake", e);
             throw new RuntimeException("Error while get metadata columns from snowflake", e);
@@ -108,7 +111,18 @@ public abstract class AbstractProcessor {
         }
     }
 
-    private List<String> getColumnsFromMetadata(String table) throws SQLException {
+    private List<String> resolveColumns(String table) throws SQLException {
+        var rawColumns = MetadataCache.getOrLoad(schemaName, table, () -> fetchColumnsFromMetadata(table));
+        var filteredColumns = rawColumns.stream()
+            .filter(column -> !ignoreColumns.contains(column))
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        LOGGER.debug("Columns mapped from target table: {}", String.join(",", filteredColumns));
+
+        return List.copyOf(filteredColumns);
+    }
+
+    private List<String> fetchColumnsFromMetadata(String table) throws SQLException {
         var metadata = connection.getMetaData();
 
         var columnsFromTable = new ArrayList<String>();
@@ -122,13 +136,6 @@ public abstract class AbstractProcessor {
                 "Empty columns returned from target table " + table + ", schema " + schemaName);
         }
 
-        columnsFromTable.removeAll(ignoreColumns);
-        //remove duplicated
-        var columnsNoDuplicate = columnsFromTable.stream().distinct().toList();
-
-        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsNoDuplicate));
-
-
-        return columnsNoDuplicate;
+        return columnsFromTable;
     }
 }
