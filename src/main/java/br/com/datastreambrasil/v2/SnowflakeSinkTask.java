@@ -15,12 +15,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.UUID;
+import br.com.datastreambrasil.common.MetadataCache;
 import net.snowflake.client.jdbc.SnowflakeConnection;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -135,7 +137,7 @@ public class SnowflakeSinkTask extends SinkTask {
             snowflakeConnection = connection.unwrap(SnowflakeConnection.class);
 
             //fill columns
-            columnsFinalTable = getColumnsFromMetadata(tableName);
+            columnsFinalTable = resolveColumnsFromMetadata(tableName);
 
             // job quartz config
             if (!disableCleanUpJob) {
@@ -379,7 +381,18 @@ public class SnowflakeSinkTask extends SinkTask {
         return false;
     }
 
-    private List<String> getColumnsFromMetadata(String table) throws SQLException {
+    List<String> resolveColumnsFromMetadata(String table) throws SQLException {
+        var rawColumns = MetadataCache.getOrLoad(schemaName, table, () -> fetchColumnsFromMetadata(table));
+        var filteredColumns = rawColumns.stream()
+            .filter(column -> !ignoreColumns.contains(column))
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+
+        LOGGER.debug("Columns mapped from target table: {}", String.join(",", filteredColumns));
+
+        return List.copyOf(filteredColumns);
+    }
+
+    private List<String> fetchColumnsFromMetadata(String table) throws SQLException {
         var metadata = connection.getMetaData();
 
         var columnsFromTable = new ArrayList<String>();
@@ -392,10 +405,6 @@ public class SnowflakeSinkTask extends SinkTask {
             throw new RuntimeException(
                     "Empty columns returned from target table " + table + ", schema " + schemaName);
         }
-
-        columnsFromTable.removeAll(ignoreColumns);
-
-        LOGGER.debug("Columns mapped from target table: {}", String.join(",", columnsFromTable));
 
         return columnsFromTable;
     }
