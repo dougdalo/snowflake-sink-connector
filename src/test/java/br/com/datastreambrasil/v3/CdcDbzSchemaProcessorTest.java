@@ -259,11 +259,11 @@ class CdcDbzSchemaProcessorTest {
         var dt = LocalDateTime.of(2018, 1, 10, 10, 30, 40);
         prepareToFlush(processor, Map.of(SnowflakeSinkConnector.CFG_HASHING_SUPPORT, true), List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH),
                 List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH));
-        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> 654df8a3
+        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> d73d14a5
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
-                "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","c","111","654df8a3","654df8a3",(?<msgtimestampc>.*)
+                "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","c","111","d73d14a5","d73d14a5",(?<msgtimestampc>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
@@ -275,11 +275,11 @@ class CdcDbzSchemaProcessorTest {
         var dt = LocalDateTime.of(2018, 1, 10, 10, 30, 40);
         prepareToFlush(processor, Map.of(SnowflakeSinkConnector.CFG_HASHING_SUPPORT, true), List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH),
                 List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH));
-        processor.put(generateUpdateEvents(dt, null, "new", "1")); //hash CR32 --> 388383f0
+        processor.put(generateUpdateEvents(dt, null, "new", "1")); //hash CR32 --> b7405ebe
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
-                "1","Name new 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","388383f0","654df8a3",(?<msgtimestampc>.*)
+                "1","Name new 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b7405ebe","d73d14a5",(?<msgtimestampc>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
@@ -291,12 +291,12 @@ class CdcDbzSchemaProcessorTest {
         var dt = LocalDateTime.of(2018, 1, 10, 10, 30, 40);
         prepareToFlush(processor, Map.of(SnowflakeSinkConnector.CFG_HASHING_SUPPORT, true), List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH),
                 List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH));
-        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> 654df8a3
-        processor.put(generateDeleteEvents(dt, "1")); //hash CR32 --> 654df8a3
+        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> d73d14a5
+        processor.put(generateDeleteEvents(dt, "1")); //hash CR32 --> d73d14a5
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
-                "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","d","111",,"654df8a3",(?<msgtimestampd>.*)
+                "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","d","111",,"d73d14a5",(?<msgtimestampd>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
@@ -308,18 +308,18 @@ class CdcDbzSchemaProcessorTest {
         var dt = LocalDateTime.of(2018, 1, 10, 10, 30, 40);
         prepareToFlush(processor, Map.of(SnowflakeSinkConnector.CFG_HASHING_SUPPORT, true), List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH),
                 List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH));
-        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> 654df8a3
-        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> 654df8a3
-        processor.put(generateDeleteEvents(dt, "2")); //hash CR32 --> e8cc0cca
-        processor.put(generateDeleteEvents(dt, "2")); //hash CR32 --> e8cc0cca
-        processor.put(generateUpdateEvents(dt, null, "new", "3")); //hash CR32 --> (previous)3d3f9965,(new)2563a2d2
-        processor.put(generateUpdateEvents(dt, null, "new", "3")); //hash CR32 --> (previous)3d3f9965,(new)2563a2d2
+        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> d73d14a5
+        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> d73d14a5
+        processor.put(generateDeleteEvents(dt, "2")); //hash CR32 --> 5abce0cc
+        processor.put(generateDeleteEvents(dt, "2")); //hash CR32 --> 5abce0cc
+        processor.put(generateUpdateEvents(dt, null, "new", "3")); //hash CR32 --> (previous)97134ed4,(new)b2fc442b
+        processor.put(generateUpdateEvents(dt, null, "new", "3")); //hash CR32 --> (previous)97134ed4,(new)b2fc442b
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
-                "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","c","111","654df8a3","654df8a3",(?<msgtimestampc>.*)
-                "2","Name 2","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","d","111",,"e8cc0cca",(?<msgtimestampd>.*)
-                "3","Name new 3","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","3d3f9965","2563a2d2",(?<msgtimestampu>.*)
+                "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","c","111","d73d14a5","d73d14a5",(?<msgtimestampc>.*)
+                "2","Name 2","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","d","111",,"5abce0cc",(?<msgtimestampd>.*)
+                "3","Name new 3","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b2fc442b","97134ed4",(?<msgtimestampu>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
@@ -331,12 +331,12 @@ class CdcDbzSchemaProcessorTest {
         var dt = LocalDateTime.of(2018, 1, 10, 10, 30, 40);
         prepareToFlush(processor, Map.of(SnowflakeSinkConnector.CFG_HASHING_SUPPORT, true), List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH),
                 List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH));
-        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> 654df8a3
-        processor.put(generateUpdateEvents(dt, null, "new", "1")); //hash CR32 --> 388383f0
+        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> d73d14a5
+        processor.put(generateUpdateEvents(dt, null, "new", "1")); //hash CR32 --> b7405ebe
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
-                "1","Name new 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","388383f0","654df8a3",(?<msgtimestampc>.*)
+                "1","Name new 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b7405ebe","d73d14a5",(?<msgtimestampc>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
@@ -348,13 +348,13 @@ class CdcDbzSchemaProcessorTest {
         var dt = LocalDateTime.of(2018, 1, 10, 10, 30, 40);
         prepareToFlush(processor, Map.of(SnowflakeSinkConnector.CFG_HASHING_SUPPORT, true), List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH),
                 List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH));
-        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> 654df8a3
-        processor.put(generateUpdateEvents(dt, null, "new", "1")); //hash CR32 --> 388383f0
-        processor.put(generateUpdateEvents(dt, "new", "new 2", "1")); //hash CR32 --> 2ec1cb58
+        processor.put(generateCreateEvents(dt, "1")); //hash CR32 --> d73d14a5
+        processor.put(generateUpdateEvents(dt, null, "new", "1")); //hash CR32 --> b7405ebe
+        processor.put(generateUpdateEvents(dt, "new", "new 2", "1")); //hash CR32 --> b8598879
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
-                "1","Name new 2 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","2ec1cb58","654df8a3",(?<msgtimestampc>.*)
+                "1","Name new 2 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b8598879","d73d14a5",(?<msgtimestampc>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
@@ -366,13 +366,13 @@ class CdcDbzSchemaProcessorTest {
         var dt = LocalDateTime.of(2018, 1, 10, 10, 30, 40);
         prepareToFlush(processor, Map.of(SnowflakeSinkConnector.CFG_HASHING_SUPPORT, true), List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH),
                 List.of(IH_CURRENT_HASH, IH_PREVIOUS_HASH));
-        processor.put(generateUpdateEvents(dt, null, "new", "1")); //hash CR32 --> (previous)654df8a3,(new)388383f0
-        processor.put(generateUpdateEvents(dt, "new", "new 002", "1")); //hash CR32 --> (new)d0a1681c
-        processor.put(generateUpdateEvents(dt, "new 002", "new 003", "1")); //hash CR32 --> (new)b9ed6ded
+        processor.put(generateUpdateEvents(dt, null, "new", "1")); //hash CR32 --> (previous)d73d14a5,(new)b7405ebe
+        processor.put(generateUpdateEvents(dt, "new", "new 002", "1")); //hash CR32 --> (previous)b7405ebe,(new)b3ebfb4d
+        processor.put(generateUpdateEvents(dt, "new 002", "new 003", "1")); //hash CR32 --> (previous)b3ebfb4d,(new)daa7febc
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
-                "1","Name new 003 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b9ed6ded","654df8a3",(?<msgtimestampc>.*)
+                "1","Name new 003 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","daa7febc","d73d14a5",(?<msgtimestampc>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
