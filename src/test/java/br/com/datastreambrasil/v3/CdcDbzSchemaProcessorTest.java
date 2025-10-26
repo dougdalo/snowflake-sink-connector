@@ -230,7 +230,8 @@ class CdcDbzSchemaProcessorTest {
         processor.flush(null);
 
         verify(processor.snowflakeConnection, times(1)).uploadStream(any(), eq("/"), assertArg(c -> assertEquals(769, c.available(), "CSV data length should be 459 bytes")), any(), eq(true));
-        verify(statementMock, times(1)).executeUpdate(matches("MERGE.*"));
+        verify(statementMock, times(1)).executeUpdate(matches("INSERT.*"));
+        verify(statementMock, times(1)).executeUpdate(matches("UPDATE.*"));
         verify(statementMock, times(1)).executeUpdate(matches("DELETE(.*)final.id = ingest.id"));
         verify(statementMock, times(1)).executeUpdate(matches("COPY.*"));
         assertEquals(0, processor.buffer.size(), "Buffer should be empty after flush");
@@ -318,8 +319,11 @@ class CdcDbzSchemaProcessorTest {
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
                 "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","c","111","d73d14a5","d73d14a5",(?<msgtimestampc>.*)
+                "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","c","111","d73d14a5","d73d14a5",(?<msgtimestampc2>.*)
                 "2","Name 2","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","d","111",,"5abce0cc",(?<msgtimestampd>.*)
+                "2","Name 2","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","d","111",,"5abce0cc",(?<msgtimestampd2>.*)
                 "3","Name new 3","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b2fc442b","97134ed4",(?<msgtimestampu>.*)
+                "3","Name new 3","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b2fc442b","97134ed4",(?<msgtimestampu2>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
@@ -354,7 +358,9 @@ class CdcDbzSchemaProcessorTest {
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
-                "1","Name new 2 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b8598879","d73d14a5",(?<msgtimestampc>.*)
+                "1","Name 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","c","111","d73d14a5","d73d14a5",(?<msgtimestampc>.*)
+                "1","Name new 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b7405ebe","d73d14a5",(?<msgtimestampc2>.*)
+                "1","Name new 2 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b8598879","b7405ebe",(?<msgtimestampc3>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));
@@ -372,7 +378,9 @@ class CdcDbzSchemaProcessorTest {
         var blockID = "111";
         var csvBaos = processor.prepareOrderedColumnsBasedOnTargetTable(blockID, List.of("id", "name", "timestamp", "time", "date", "desc", IHTOPIC, IHOFFSET, IHPARTITION, IHOP, IHBLOCKID, IH_CURRENT_HASH, IH_PREVIOUS_HASH, IHDATETIME));
         var pattern = Pattern.compile("""
-                "1","Name new 003 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","daa7febc","d73d14a5",(?<msgtimestampc>.*)
+                "1","Name new 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b7405ebe","d73d14a5",(?<msgtimestampc>.*)
+                "1","Name new 002 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","b3ebfb4d","b7405ebe",(?<msgtimestampc2>.*)
+                "1","Name new 003 1","2018-01-10T08:30:40","10:30:40","2018-01-09",,"test_topic","0","0","u","111","daa7febc","b3ebfb4d",(?<msgtimestampc3>.*)
                 """);
 
         assertTrue(pattern.matcher(csvBaos.toString()).find(), String.format("CSV data [%s] should match with regex %s", csvBaos, pattern.pattern()));

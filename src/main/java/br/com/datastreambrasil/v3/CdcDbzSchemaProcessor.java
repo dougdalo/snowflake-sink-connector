@@ -134,17 +134,22 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                     LOGGER.debug("Copying statement to ingest table: {}", copyInto);
                     stmt.executeUpdate(copyInto);
 
+                    if (flushHasInsertedRecords) {
+                        String insert = String.format("INSERT INTO %s (%s) SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op in ('c', 'r')",
+                                tableName, String.join(",", columnsFinalTable), buildExcludeColumns(), ingestTableName, blockID);
+                        LOGGER.debug("Inserting into ingest table: {}", insert);
+                        stmt.executeUpdate(insert);
+                    }
 
-                    if (flushHasInsertedRecords || flushHasUpdatedRecords) {
-                        //insert/update in final table
-                        String merge = String.format("MERGE INTO %s AS final USING (SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op in ('c', 'r', 'u')) AS ingest ON %s " +
-                                        "WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s) " +
-                                        "WHEN MATCHED THEN UPDATE SET %s",
-                                tableName, buildExcludeColumns(), ingestTableName, blockID,
-                                buildPkWhereClause(pks), String.join(",", columnsFinalTable), String.join(",", columnsFinalTable.stream().map(c -> "ingest." + c).toList()),
-                                buildUpdateColumns());
-                        LOGGER.debug("Merging statement to final table: {}", merge);
-                        stmt.executeUpdate(merge);
+
+                    if (flushHasUpdatedRecords) {
+                        //update in final table
+                        String update = String.format(
+                                "UPDATE %s AS final SET %s FROM (SELECT * FROM %s WHERE ih_blockid = '%s' and ih_op = 'u') AS ingest WHERE %s",
+                                tableName, buildUpdateColumns(), ingestTableName, blockID,
+                                buildPkWhereClause(pks));
+                        LOGGER.debug("Updating statement to final table: {}", update);
+                        stmt.executeUpdate(update);
                     }
 
                     //delete from final table
@@ -240,11 +245,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
     private String convertPKToStringKey(SnowflakeRecord record) {
 
         if (hashingSupport) {
-            if (debeziumOperation.d.toString().equalsIgnoreCase(record.op())) {
-                return record.hash().previousHash();
-            } else {
-                return record.hash().newHash();
-            }
+            return UUID.randomUUID().toString();
         }
 
         var keyStruct = (Struct) record.originalRecord().key();
@@ -462,9 +463,14 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
     }
 
     private boolean validate(SinkRecord record) {
-        if (record.keySchema() == null || record.valueSchema() == null ||
-                !(record.key() instanceof Struct) || !(record.value() instanceof Struct)) {
-            LOGGER.error("Key and value must be Structs with schemas. Key: {}, Value: {}", record.key(), record.value());
+
+        if (!hashingSupport && (record.keySchema() == null || !(record.key() instanceof Struct))) {
+            LOGGER.error("Key must be Struct with schema. Key: {}", record.key());
+            return false;
+        }
+
+        if (record.valueSchema() == null || !(record.value() instanceof Struct)) {
+            LOGGER.error("Value must be Struct with schemas. Value: {}", record.value());
             return false;
         }
 
