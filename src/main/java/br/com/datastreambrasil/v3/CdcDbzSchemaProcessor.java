@@ -156,7 +156,8 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                     if (flushHasDeletedRecords) {
                         String deleteFromFinalTable = String.format(
                                 "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE ih_blockid = '%s' and ih_op = 'd') AS ingest WHERE %s",
-                                tableName, String.join(",", pks), ingestTableName, blockID,
+                                tableName, hashingSupport ? String.join(",", IH_CURRENT_HASH, IH_PREVIOUS_HASH) : String.join(",", pks),
+                                ingestTableName, blockID,
                                 buildPkWhereClause(pks));
                         LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
                         stmt.executeUpdate(deleteFromFinalTable);
