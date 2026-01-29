@@ -98,6 +98,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
             LOGGER.trace("Added record to buffer: {} with operation {}", recordToSnowflake, valueOP);
             buffer.put(convertPKToStringKey(recordToSnowflake), recordToSnowflake);
             cleanUpOldHashRecords(recordToSnowflake);
+            maybeFlush(null);
         }
     }
 
@@ -180,6 +181,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
             var endTime = System.currentTimeMillis();
             LOGGER.debug("Flushed {} records in {} ms", buffer.size(), endTime - startTime);
             buffer.clear();
+            markFlushTimestamp();
         }
     }
 
