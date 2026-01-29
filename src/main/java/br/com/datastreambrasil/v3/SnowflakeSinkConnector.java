@@ -30,6 +30,8 @@ public class SnowflakeSinkConnector extends SinkConnector {
     protected static final String CFG_REDIS_KEY_TTL_SECONDS = "redis_key_ttl_seconds";
     protected static final String CFG_PROFILE = "profile";
     protected static final String CFG_HASHING_SUPPORT = "hashing_support";
+    protected static final String CFG_BATCH_SIZE = "batch_size";
+    protected static final String CFG_BATCH_FLUSH_INTERVAL_MS = "batch_flush_interval_ms";
 
     /*
      * For some use cases we need to load all data again, each time. So we have two
@@ -89,7 +91,11 @@ public class SnowflakeSinkConnector extends SinkConnector {
                     "When true, we will calculate hash for before and after struct and use it if PK does not exist. This is a sort of surrogate key for the record.")
             .define(CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS, ConfigDef.Type.INT, 1800,
                     ConfigDef.Importance.HIGH,
-                    "If we don't receive any event for this amount of time, we will truncate the table in snowflake");
+                    "If we don't receive any event for this amount of time, we will truncate the table in snowflake")
+            .define(CFG_BATCH_SIZE, ConfigDef.Type.INT, 0, ConfigDef.Importance.MEDIUM,
+                    "Max number of records to buffer before flushing. Set to 0 to disable.")
+            .define(CFG_BATCH_FLUSH_INTERVAL_MS, ConfigDef.Type.LONG, 0L, ConfigDef.Importance.MEDIUM,
+                    "Max time in milliseconds to wait before flushing buffered records. Set to 0 to disable.");
 
     private Map<String, String> props;
 

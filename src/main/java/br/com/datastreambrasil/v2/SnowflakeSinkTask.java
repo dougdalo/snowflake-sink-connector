@@ -50,6 +50,9 @@ public class SnowflakeSinkTask extends SinkTask {
     private boolean truncateBeforeBulk;
     private int truncateWhenNoDataAfterSeconds;
     private LocalDateTime lastFlush = LocalDateTime.now();
+    private int batchSize;
+    private long batchFlushIntervalMs;
+    private long lastFlushTimestampMs = System.currentTimeMillis();
 
     private final List<String> timestampFieldsConvertToSeconds = new ArrayList<>();
     private final List<String> dateFieldsConvert = new ArrayList<>();
@@ -93,6 +96,8 @@ public class SnowflakeSinkTask extends SinkTask {
             truncateWhenNoDataAfterSeconds = config
                     .getInt(SnowflakeSinkConnector.CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS);
             removeStageAfterCopy = config.getBoolean(SnowflakeSinkConnector.CFG_REMOVE_STAGE_AFTER_COPY);
+            batchSize = config.getInt(SnowflakeSinkConnector.CFG_BATCH_SIZE);
+            batchFlushIntervalMs = config.getLong(SnowflakeSinkConnector.CFG_BATCH_FLUSH_INTERVAL_MS);
 
             var disableCleanUpJob = config.getBoolean(SnowflakeSinkConnector.CFG_JOB_CLEANUP_DISABLE);
             var intervalHoursCleanup = config.getInt(SnowflakeSinkConnector.CFG_JOB_CLEANUP_HOURS);
@@ -187,6 +192,7 @@ public class SnowflakeSinkTask extends SinkTask {
                 } else {
                     addRecordUsingPlainFormat(mapValue, record);
                 }
+                maybeFlush();
             }
         } catch (Throwable e) {
             LOGGER.error("Error while putting records", e);
@@ -287,6 +293,7 @@ public class SnowflakeSinkTask extends SinkTask {
         } finally {
             buffer.clear();
             lastFlush = LocalDateTime.now();
+            lastFlushTimestampMs = System.currentTimeMillis();
         }
     }
 
@@ -377,6 +384,24 @@ public class SnowflakeSinkTask extends SinkTask {
         }
 
         return false;
+    }
+
+    private void maybeFlush() {
+        if (buffer.isEmpty()) {
+            return;
+        }
+
+        if (batchSize > 0 && buffer.size() >= batchSize) {
+            flush(null);
+            return;
+        }
+
+        if (batchFlushIntervalMs > 0) {
+            var now = System.currentTimeMillis();
+            if ((now - lastFlushTimestampMs) >= batchFlushIntervalMs) {
+                flush(null);
+            }
+        }
     }
 
     private List<String> getColumnsFromMetadata(String table) throws SQLException {

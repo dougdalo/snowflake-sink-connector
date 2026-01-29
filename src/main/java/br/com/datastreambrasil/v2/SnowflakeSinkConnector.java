@@ -25,6 +25,8 @@ public class SnowflakeSinkConnector extends SinkConnector {
     protected static final String CFG_JOB_CLEANUP_DISABLE = "job_cleanup_disable";
     protected static final String CFG_PAYLOAD_CDC_FORMAT = "payload_cdc_format";
     protected static final String CFG_IGNORE_COLUMNS = "ignore_columns";
+    protected static final String CFG_BATCH_SIZE = "batch_size";
+    protected static final String CFG_BATCH_FLUSH_INTERVAL_MS = "batch_flush_interval_ms";
 
     /*
      * For some use cases we need to load all data again, each time. So we have two
@@ -79,7 +81,11 @@ public class SnowflakeSinkConnector extends SinkConnector {
                     "If true, we will remove the stage after copying it to snowflake")
             .define(CFG_TRUNCATE_WHEN_NODATA_AFTER_SECONDS, ConfigDef.Type.INT, 1800,
                     ConfigDef.Importance.HIGH,
-                    "If we don't receive any event for this amount of time, we will truncate the table in snowflake");
+                    "If we don't receive any event for this amount of time, we will truncate the table in snowflake")
+            .define(CFG_BATCH_SIZE, ConfigDef.Type.INT, 0, ConfigDef.Importance.MEDIUM,
+                    "Max number of records to buffer before flushing. Set to 0 to disable.")
+            .define(CFG_BATCH_FLUSH_INTERVAL_MS, ConfigDef.Type.LONG, 0L, ConfigDef.Importance.MEDIUM,
+                    "Max time in milliseconds to wait before flushing buffered records. Set to 0 to disable.");
 
     private Map<String, String> props;
 

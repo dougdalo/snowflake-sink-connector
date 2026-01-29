@@ -37,6 +37,9 @@ public abstract class AbstractProcessor {
     protected List<String> timeFieldsConvert = new ArrayList<>();
     protected final Map<String, SnowflakeRecord> buffer = new LinkedHashMap<>();
     protected boolean hashingSupport;
+    protected int batchSize;
+    protected long batchFlushIntervalMs;
+    protected long lastFlushTimestampMs = System.currentTimeMillis();
 
 
     protected static final String AFTER = "after";
@@ -91,12 +94,36 @@ public abstract class AbstractProcessor {
         ingestTableName = tableName + INGEST_SUFFIX;
         schemaName = config.getString(SnowflakeSinkConnector.CFG_SCHEMA_NAME);
         hashingSupport = config.getBoolean(SnowflakeSinkConnector.CFG_HASHING_SUPPORT);
+        batchSize = config.getInt(SnowflakeSinkConnector.CFG_BATCH_SIZE);
+        batchFlushIntervalMs = config.getLong(SnowflakeSinkConnector.CFG_BATCH_FLUSH_INTERVAL_MS);
 
         timestampFieldsConvert.addAll(config.getList(SnowflakeSinkConnector.CFG_TIMESTAMP_FIELDS_CONVERT));
         dateFieldsConvert.addAll(config.getList(SnowflakeSinkConnector.CFG_DATE_FIELDS_CONVERT));
         timeFieldsConvert.addAll(config.getList(SnowflakeSinkConnector.CFG_TIME_FIELDS_CONVERT));
         ignoreColumns.addAll(config.getList(SnowflakeSinkConnector.CFG_IGNORE_COLUMNS));
 
+    }
+
+    protected void markFlushTimestamp() {
+        lastFlushTimestampMs = System.currentTimeMillis();
+    }
+
+    protected void maybeFlush(Map<TopicPartition, OffsetAndMetadata> currentOffsets) {
+        if (buffer.isEmpty()) {
+            return;
+        }
+
+        if (batchSize > 0 && buffer.size() >= batchSize) {
+            flush(currentOffsets);
+            return;
+        }
+
+        if (batchFlushIntervalMs > 0) {
+            var now = System.currentTimeMillis();
+            if ((now - lastFlushTimestampMs) >= batchFlushIntervalMs) {
+                flush(currentOffsets);
+            }
+        }
     }
 
     protected void setupSnowflakeConnection(AbstractConfig config) {
