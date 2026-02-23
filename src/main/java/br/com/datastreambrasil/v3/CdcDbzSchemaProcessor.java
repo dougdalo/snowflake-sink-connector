@@ -96,7 +96,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
             );
 
             LOGGER.trace("Added record to buffer: {} with operation {}", recordToSnowflake, valueOP);
-            buffer.put(convertPKToStringKey(recordToSnowflake), recordToSnowflake);
+            buffer.put(UUID.randomUUID().toString(), recordToSnowflake);
             cleanUpOldHashRecords(recordToSnowflake);
         }
     }
