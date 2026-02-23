@@ -45,6 +45,9 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
 
     private Scheduler scheduler;
     private List<String> pks = new ArrayList<>();
+    private boolean flushHasDeletedRecords;
+    private boolean flushHasInsertedRecords;
+    private boolean flushHasUpdatedRecords;
     private final CRC32 crc32 = new CRC32();
 
     @Override
@@ -93,7 +96,7 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
             );
 
             LOGGER.trace("Added record to buffer: {} with operation {}", recordToSnowflake, valueOP);
-            buffer.put(convertPKToStringKey(recordToSnowflake), recordToSnowflake);
+            buffer.put(UUID.randomUUID().toString(), recordToSnowflake);
             cleanUpOldHashRecords(recordToSnowflake);
         }
     }
@@ -131,21 +134,34 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
                     LOGGER.debug("Copying statement to ingest table: {}", copyInto);
                     stmt.executeUpdate(copyInto);
 
-                    // MERGE handles INSERT (c/r), UPDATE (u) and DELETE (d) in a single statement
-                    String merge = String.format(
-                            "MERGE INTO %s AS final USING (" +
-                                    "SELECT * FROM %s WHERE ih_blockid = '%s' AND ih_op IN ('c', 'r', 'u', 'd')" +
-                                    ") AS ingest ON %s " +
-                                    "WHEN MATCHED AND ingest.ih_op = 'd' THEN DELETE " +
-                                    "WHEN MATCHED AND ingest.ih_op = 'u' THEN UPDATE SET %s " +
-                                    "WHEN NOT MATCHED AND ingest.ih_op IN ('c', 'r') THEN INSERT (%s) VALUES (%s)",
-                            tableName, ingestTableName, blockID,
-                            buildPkWhereClause(pks),
-                            buildUpdateColumns(),
-                            String.join(",", columnsFinalTable),
-                            buildInsertValues());
-                    LOGGER.debug("Merge statement to final table: {}", merge);
-                    stmt.executeUpdate(merge);
+                    if (flushHasInsertedRecords) {
+                        String insert = String.format("INSERT INTO %s (%s) SELECT * EXCLUDE (%s) FROM %s WHERE ih_blockid = '%s' and ih_op in ('c', 'r')",
+                                tableName, String.join(",", columnsFinalTable), buildExcludeColumns(), ingestTableName, blockID);
+                        LOGGER.debug("Inserting into ingest table: {}", insert);
+                        stmt.executeUpdate(insert);
+                    }
+
+
+                    if (flushHasUpdatedRecords) {
+                        //update in final table
+                        String update = String.format(
+                                "UPDATE %s AS final SET %s FROM (SELECT * FROM %s WHERE ih_blockid = '%s' and ih_op = 'u') AS ingest WHERE %s",
+                                tableName, buildUpdateColumns(), ingestTableName, blockID,
+                                buildPkWhereClause(pks));
+                        LOGGER.debug("Updating statement to final table: {}", update);
+                        stmt.executeUpdate(update);
+                    }
+
+                    //delete from final table
+                    if (flushHasDeletedRecords) {
+                        String deleteFromFinalTable = String.format(
+                                "DELETE FROM %s as final USING (SELECT %s FROM %s WHERE ih_blockid = '%s' and ih_op = 'd') AS ingest WHERE %s",
+                                tableName, hashingSupport ? String.join(",", IH_CURRENT_HASH, IH_PREVIOUS_HASH) : String.join(",", pks),
+                                ingestTableName, blockID,
+                                buildPkWhereClause(pks));
+                        LOGGER.debug("Deleting statement from final table: {}", deleteFromFinalTable);
+                        stmt.executeUpdate(deleteFromFinalTable);
+                    }
 
                     var endTimeStatement = System.currentTimeMillis();
                     LOGGER.debug("Executed statement in {} ms", endTimeStatement - startTimeStatement);
@@ -255,12 +271,8 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
         return String.join(",", columns);
     }
 
-    private String buildInsertValues() {
-        var values = new ArrayList<String>();
-        for (String column : columnsFinalTable) {
-            values.add(String.format("ingest.%s", column));
-        }
-        return String.join(",", values);
+    private String buildExcludeColumns() {
+        return String.join(",", IHPARTITION, IHDATETIME, IHBLOCKID, IHOFFSET, IHOP, IHTOPIC);
     }
 
     private String buildPkWhereClause(List<String> pks) {
@@ -280,9 +292,26 @@ public class CdcDbzSchemaProcessor extends AbstractProcessor {
         var csvInMemory = new ByteArrayOutputStream();
         var stringBuilder = new StringBuilder();
 
+        flushHasDeletedRecords = false;
+        flushHasUpdatedRecords = false;
+        flushHasInsertedRecords = false;
+
         boolean loggedDebugForFirstLine = false;
         for (var recordInBuffer : buffer.values()) {
             var count = 0;
+            var op = recordInBuffer.op();
+
+            if (debeziumOperation.d.toString().equalsIgnoreCase(op)) {
+                flushHasDeletedRecords = true;
+            }
+
+            if (debeziumOperation.c.toString().equalsIgnoreCase(op) || debeziumOperation.r.toString().equalsIgnoreCase(op)) {
+                flushHasInsertedRecords = true;
+            }
+
+            if (debeziumOperation.u.toString().equalsIgnoreCase(op)) {
+                flushHasUpdatedRecords = true;
+            }
 
             for (String columnFromSnowflakeTable : columnsFromTable) {
 
